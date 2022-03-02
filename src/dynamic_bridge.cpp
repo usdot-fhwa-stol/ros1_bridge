@@ -817,8 +817,10 @@ int main(int argc, char * argv[])
   // ROS 1 asynchronous spinner
   std::unique_ptr<ros::AsyncSpinner> async_spinner = nullptr;
   if (!multi_threads) {
+    RCLCPP_INFO_STREAM(ros2_node->get_logger(), "Using single-threaded ROS1 spinner");
     async_spinner = std::make_unique<ros::AsyncSpinner>(1);
   } else {
+    RCLCPP_INFO_STREAM(ros2_node->get_logger(), "Using multi-threaded ROS1 spinner");
     async_spinner = std::make_unique<ros::AsyncSpinner>(0, ros1_callback_queue.get());
   }
   async_spinner->start();
@@ -826,8 +828,10 @@ int main(int argc, char * argv[])
   // ROS 2 spinning loop
   std::unique_ptr<rclcpp::Executor> executor = nullptr;
   if (!multi_threads) {
+    RCLCPP_INFO_STREAM(ros2_node->get_logger(), "Using single-threaded ROS2 executor");
     executor = std::make_unique<rclcpp::executors::SingleThreadedExecutor>();
   } else {
+    RCLCPP_INFO_STREAM(ros2_node->get_logger(), "Using multi-threaded ROS2 executor");
     executor = std::make_unique<rclcpp::executors::MultiThreadedExecutor>();
   }
   executor->add_node(ros2_node);
