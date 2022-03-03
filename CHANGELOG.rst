@@ -2,6 +2,28 @@
 Changelog for package ros1_bridge
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.10.2 (2021-11-05)
+-------------------
+* Example for `parameter_bridge` (`#330 <https://github.com/ros2/ros1_bridge/issues/330>`_)
+* Use rcpputils/scope_exit.hpp instead of rclcpp/scope_exit.hpp (`#324 <https://github.com/ros2/ros1_bridge/issues/324>`_)
+* Use FindPython3 and make Python dependency explicit (`#322 <https://github.com/ros2/ros1_bridge/issues/322>`_)
+* Bump ros-tooling/setup-ros@v0.2 (`#323 <https://github.com/ros2/ros1_bridge/issues/323>`_)
+* Add GitHub workflow for CI (`#310 <https://github.com/ros2/ros1_bridge/issues/310>`_)
+* Update includes after rcutils/get_env.h deprecation (`#311 <https://github.com/ros2/ros1_bridge/issues/311>`_)
+* Contributors: Christophe Bedard, Harsh Deshpande, Loy, Shane Loretz
+
+0.10.1 (2021-01-25)
+-------------------
+* Fix logging for updated rclcpp interface (`#303 <https://github.com/ros2/ros1_bridge/issues/303>`_)
+* Fix typo in comments (`#297 <https://github.com/ros2/ros1_bridge/issues/297>`_)
+* Contributors: Michael Carroll, Vicidel
+
+0.9.5 (2020-12-08)
+------------------
+* Update to use rosidl_parser and .idl files rather than rosidl_adapter and .msg files (`#296 <https://github.com/ros2/ros1_bridge/issues/296>`_)
+* Update maintainers (`#286 <https://github.com/ros2/ros1_bridge/issues/286>`_)
+* Contributors: Jacob Perron, William Woodall
+
 0.9.4 (2020-09-10)
 ------------------
 * use hardcoded QoS (keep all, transient local) for /tf_static topic in dynamic_bridge (`#282 <https://github.com/ros2/ros1_bridge/issues/282>`_)
