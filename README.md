@@ -1,5 +1,11 @@
 # Bridge communication between ROS 1 and ROS 2
 
+## NOTE
+
+This is a fork of the [ros1_bridge repo](https://github.com/ros2/ros1_bridge) containing modifications to support usage with the CARMAPlatform. This repository contains changes to the ros1_bridge source code, All modifications in this repository are licensed under the same Apache License 2.0 as ros1_bridge and all modifications of the source code made will be marked as such in accordance with the terms of the Apache License 2.0. For a list of modifications and their descriptions please see [NOTICE.md](NOTICE.md).
+
+## README
+
 This package provides a network bridge which enables the exchange of messages between ROS 1 and ROS 2.
 
 The bridge is currently implemented in C++ as at the time the Python API for ROS 2 had not been developed.
