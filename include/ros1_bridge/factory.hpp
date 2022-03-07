@@ -259,22 +259,31 @@ protected:
         &result);
       if (ret == RMW_RET_OK) {
         if (result) {  // message GID equals to bridge's ROS2 publisher GID
+          // TODO this is a possible exit point
+          RCLCPP_WARN(
+            logger,
+            "Mismatched GID dropping message of type" + ros1_type_name);
           return;  // do not publish messages from bridge itself
         }
       } else {
         auto msg = std::string("Failed to compare gids: ") + rmw_get_error_string().str;
         rmw_reset_error();
+        // TODO this is a possible exit point
+        RCLCPP_WARN(
+            logger,
+            "Exception:" + msg + " for message: " + ros1_type_name);
         throw std::runtime_error(msg);
       }
     }
 
     void * ptr = ros1_pub;
     if (ptr == 0) {
-      RCLCPP_WARN_ONCE(
+      RCLCPP_WARN(
         logger,
         "Message from ROS 2 %s failed to be passed to ROS 1 %s because the "
         "ROS 1 publisher is invalid (showing msg only once per type)",
         ros2_type_name.c_str(), ros1_type_name.c_str());
+      // TODO this is a possible exit point
       return;
     }
 

@@ -266,6 +266,8 @@ void update_bridge(
         nullptr,
         multi_threads);
     } catch (std::runtime_error & e) {
+      // TODO exit point
+      RCLCPP_WARN_STREAM(ros2_node->get_logger(), "Runtime error occurred " << e.what());
       fprintf(
         stderr,
         "failed to create 2to1 bridge for topic '%s' "
