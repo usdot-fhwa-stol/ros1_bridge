@@ -19,6 +19,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <unordered_set>
 
 // include ROS 1
 #ifdef __clang__
