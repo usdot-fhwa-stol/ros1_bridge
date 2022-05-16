@@ -556,16 +556,51 @@ int main(int argc, char * argv[])
           topic_name.c_str(), type_name.c_str());
 
         try {
+
+          // Define default qos settings for parameter bridged topics
+          auto qos_settings = rclcpp::QoS(rclcpp::KeepLast(queue_size));
+
+          // Update the qos settings if the user has specified them
           if (topics[i].hasMember("qos")) {
             printf("Setting up QoS for '%s': ", topic_name.c_str());
-            auto qos_settings = ros1_bridge::qos_from_params(topics[i]["qos"]);
+            qos_settings = ros1_bridge::qos_from_params(topics[i]["qos"]);
             printf("\n");
+          }
+
+          // Check the bridge direction
+          if (topics[i].hasMember("direction") 
+            && topics[i]["direction"].getType() == XmlRpc::XmlRpcValue::TypeString
+            && static_cast<std::string>(topics[i]["direction"]) == "1to2") { // ROS1 to ROS2
+
+            printf("Parameter bridging topic in direction: 1to2 '%s': ", topic_name.c_str());
+
+            ros1_bridge::BridgeHandles handles;
+
+            handles.bridge1to2 = create_bridge_from_1_to_2(
+              ros1_node, ros2_node, "", topic_name, queue_size, type_name, topic_name, qos_settings);
+
+            all_parameter_based_handles.push_back(handles);
+
+          } else if (topics[i].hasMember("direction") 
+            && topics[i]["direction"].getType() == XmlRpc::XmlRpcValue::TypeString
+            && static_cast<std::string>(topics[i]["direction"]) == "2to1") { // ROS2 to ROS1
+
+            printf("Parameter bridging topic in direction: 2to1 '%s': ", topic_name.c_str());
+
+            ros1_bridge::BridgeHandles handles;
+
+            handles.bridge2to1 = create_bridge_from_2_to_1(
+              ros2_node, ros1_node, type_name, topic_name, qos_settings, "", topic_name, queue_size);
+
+            all_parameter_based_handles.push_back(handles);
+
+
+          } else { // bi-directional
+
+            printf("Parameter bridging topic in direction: both '%s': ", topic_name.c_str());
+
             ros1_bridge::BridgeHandles handles = ros1_bridge::create_bidirectional_bridge(
               ros1_node, ros2_node, "", type_name, topic_name, queue_size, qos_settings);
-            all_parameter_based_handles.push_back(handles); // TODO can we combine these handles with the dynamic ones?
-          } else {
-            ros1_bridge::BridgeHandles handles = ros1_bridge::create_bidirectional_bridge(
-              ros1_node, ros2_node, "", type_name, topic_name, queue_size);
             all_parameter_based_handles.push_back(handles);
           }
         } catch (std::runtime_error & e) {
@@ -711,7 +746,12 @@ int main(int argc, char * argv[])
     for (const auto& handle :  all_parameter_based_handles) {
       // All parameter topics bridges are bi-directional so just get the ros1 topic name
       // and add it to the reserved set
-      do_not_clear_topics.insert(handle.bridge1to2.ros1_subscriber.getTopic());
+      if (handle.bridge1to2.ros2_publisher) { // If the ros2_publisher is set then we can get the topic from the 1to2 handle
+        do_not_clear_topics.insert(handle.bridge1to2.ros1_subscriber.getTopic());
+      } else { // Otherwise we can get the topic from the 2to1 handle
+        do_not_clear_topics.insert(handle.bridge2to1.ros1_publisher.getTopic());
+      }
+
     }
 
     // Add parameter services from 1 to 2 to the reserved set 
