@@ -364,7 +364,7 @@ void update_bridge(
 
   // remove obsolete ros1 services
   for (auto it = service_bridges_2_to_1.begin(); it != service_bridges_2_to_1.end(); ) {
-    if (do_not_clear_topics.find(topic_name) == do_not_clear_topics.end() // This topic is allowed to be removed
+    if (do_not_clear_topics.find(it->first) == do_not_clear_topics.end() // This topic is allowed to be removed
        && ros1_services.find(it->first) == ros1_services.end()) {
 
       printf("Removed 2 to 1 bridge for service %s\n", it->first.data());
@@ -380,7 +380,7 @@ void update_bridge(
 
   // remove obsolete ros2 services
   for (auto it = service_bridges_1_to_2.begin(); it != service_bridges_1_to_2.end(); ) {
-    if (do_not_clear_topics.find(topic_name) == do_not_clear_topics.end() // This topic is allowed to be removed
+    if (do_not_clear_topics.find(it->first) == do_not_clear_topics.end() // This topic is allowed to be removed
         && ros2_services.find(it->first) == ros2_services.end()) {
       printf("Removed 1 to 2 bridge for service %s\n", it->first.data());
       try {
