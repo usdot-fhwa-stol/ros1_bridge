@@ -884,6 +884,7 @@ int main(int argc, char * argv[])
       &output_topic_introspection,
       &bridge_all_1to2_topics, &bridge_all_2to1_topics,
       &already_ignored_topics, &already_ignored_services,
+      &do_not_clear_topics,
       multi_threads
       ]() -> void
       {
