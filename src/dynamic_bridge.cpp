@@ -1031,7 +1031,7 @@ int main(int argc, char * argv[])
         auto & service_type = service_and_types.second[0];  // explicitly take the first
 
         // ignore reserved services
-        if (parameter_reserved_connections.find(name) != parameter_reserved_connections.end()) {
+        if (parameter_reserved_connections.find(service_name) != parameter_reserved_connections.end()) {
           continue;
         }
 
