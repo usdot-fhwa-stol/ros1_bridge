@@ -1,5 +1,11 @@
 # Bridge communication between ROS 1 and ROS 2
 
+## NOTE
+
+This is a fork of the [ros1_bridge repo](https://github.com/ros2/ros1_bridge) containing modifications to support usage with the CARMAPlatform. This repository contains changes to the ros1_bridge source code, All modifications in this repository are licensed under the same Apache License 2.0 as ros1_bridge and all modifications of the source code made will be marked as such in accordance with the terms of the Apache License 2.0. For a list of modifications and their descriptions please see [NOTICE.md](NOTICE.md).
+
+## README
+
 This package provides a network bridge which enables the exchange of messages between ROS 1 and ROS 2.
 
 The bridge is currently implemented in C++ as at the time the Python API for ROS 2 had not been developed.
@@ -419,3 +425,47 @@ This should start printing text like `I heard: [hello world ...]` with a timesta
 ros2 service call /add_two_ints example_interfaces/srv/AddTwoInts "{a: 1, b: 2}"
 ```
 If all is well, the output should contain `example_interfaces.srv.AddTwoInts_Response(sum=3)`
+
+### Parametrizing Quality of Service
+An advantage of ROS 2 over ROS 1 is the possibility to define different Quality of Service settings per topic.
+The parameter bridge optionally allows for this as well.
+For some topics, like `/tf_static` this is actually required, as this is a latching topic in ROS 1.
+In ROS 2 with the `parameter_bridge`, this requires that topic to be configured as such:
+
+```yaml
+topics:
+  -
+    topic: /tf_static
+    type: tf2_msgs/msg/TFMessage
+    queue_size: 1
+    qos:
+      history: keep_all
+      durability: transient_local
+```
+
+All other QoS options (as documented here in https://docs.ros.org/en/foxy/Concepts/About-Quality-of-Service-Settings.html) are available:
+
+```yaml
+topics:
+  -
+    topic: /some_ros1_topic
+    type: std_msgs/msg/String
+    queue_size: 1
+    qos:
+      history: keep_last  # OR keep_all, then you can omit `depth` parameter below
+      depth: 10  # Only required when history == keep_last
+      reliability: reliable  # OR best_effort
+      durability: transient_local  # OR volatile
+      deadline:
+          secs: 10
+          nsecs: 2345
+      lifespan:
+          secs: 20
+          nsecs: 3456
+      liveliness: liveliness_system_default  # Values from https://design.ros2.org/articles/qos_deadline_liveliness_lifespan.html, eg. LIVELINESS_AUTOMATIC
+      liveliness_lease_duration:
+          secs: 40
+          nsecs: 5678
+```
+
+Note that the `qos` section can be omitted entirely and options not set are left default.

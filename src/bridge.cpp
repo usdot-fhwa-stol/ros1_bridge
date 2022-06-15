@@ -76,7 +76,8 @@ create_bridge_from_2_to_1(
   const std::string & ros1_type_name,
   const std::string & ros1_topic_name,
   size_t publisher_queue_size,
-  rclcpp::PublisherBase::SharedPtr ros2_pub)
+  rclcpp::PublisherBase::SharedPtr ros2_pub,
+  bool custom_callback_group)
 {
   auto subscriber_qos = rclcpp::SensorDataQoS(rclcpp::KeepLast(subscriber_queue_size));
   return create_bridge_from_2_to_1(
@@ -88,7 +89,8 @@ create_bridge_from_2_to_1(
     ros1_type_name,
     ros1_topic_name,
     publisher_queue_size,
-    ros2_pub);
+    ros2_pub,
+    custom_callback_group);
 }
 
 Bridge2to1Handles
@@ -101,14 +103,15 @@ create_bridge_from_2_to_1(
   const std::string & ros1_type_name,
   const std::string & ros1_topic_name,
   size_t publisher_queue_size,
-  rclcpp::PublisherBase::SharedPtr ros2_pub)
+  rclcpp::PublisherBase::SharedPtr ros2_pub,
+  bool custom_callback_group)
 {
   auto factory = get_factory(ros1_type_name, ros2_type_name);
   auto ros1_pub = factory->create_ros1_publisher(
     ros1_node, ros1_topic_name, publisher_queue_size);
 
   auto ros2_sub = factory->create_ros2_subscriber(
-    ros2_node, ros2_topic_name, subscriber_qos, ros1_pub, ros2_pub);
+    ros2_node, ros2_topic_name, subscriber_qos, ros1_pub, ros2_pub, custom_callback_group);
 
   Bridge2to1Handles handles;
   handles.ros2_subscriber = ros2_sub;
@@ -123,7 +126,8 @@ create_bidirectional_bridge(
   const std::string & ros1_type_name,
   const std::string & ros2_type_name,
   const std::string & topic_name,
-  size_t queue_size)
+  size_t queue_size,
+  bool custom_callback_group)
 {
   RCLCPP_INFO(
     ros2_node->get_logger(), "create bidirectional bridge for topic %s",
@@ -132,6 +136,30 @@ create_bidirectional_bridge(
   handles.bridge1to2 = create_bridge_from_1_to_2(
     ros1_node, ros2_node,
     ros1_type_name, topic_name, queue_size, ros2_type_name, topic_name, queue_size);
+  handles.bridge2to1 = create_bridge_from_2_to_1(
+    ros2_node, ros1_node,
+    ros2_type_name, topic_name, queue_size, ros1_type_name, topic_name, queue_size,
+    handles.bridge1to2.ros2_publisher, custom_callback_group);
+  return handles;
+}
+
+BridgeHandles
+create_bidirectional_bridge(
+  ros::NodeHandle ros1_node,
+  rclcpp::Node::SharedPtr ros2_node,
+  const std::string & ros1_type_name,
+  const std::string & ros2_type_name,
+  const std::string & topic_name,
+  size_t queue_size,
+  const rclcpp::QoS & publisher_qos)
+{
+  RCLCPP_INFO(
+    ros2_node->get_logger(), "create bidirectional bridge for topic %s",
+    topic_name.c_str());
+  BridgeHandles handles;
+  handles.bridge1to2 = create_bridge_from_1_to_2(
+    ros1_node, ros2_node,
+    ros1_type_name, topic_name, queue_size, ros2_type_name, topic_name, publisher_qos);
   handles.bridge2to1 = create_bridge_from_2_to_1(
     ros2_node, ros1_node,
     ros2_type_name, topic_name, queue_size, ros1_type_name, topic_name, queue_size,
