@@ -110,6 +110,7 @@ create_bridge_from_2_to_1(
 
   auto latch_qos = rclcpp::QoS(KeepLast(1));
   latch_qos.transient_local();
+  latch_qos.reliable();
   ros::Publisher ros1_pub;
   if(publisher_qos == latch_qos){
     ros1_pub = factory->create_ros1_publisher(
