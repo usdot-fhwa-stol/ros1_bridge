@@ -108,6 +108,7 @@ create_bridge_from_2_to_1(
 {
   auto factory = get_factory(ros1_type_name, ros2_type_name);
 
+  // If the ros2 QoS parameters call for latching like behavior, set latching to true for ros1 publisher
   auto latch_qos = rclcpp::QoS(rclcpp::KeepLast(1));
   latch_qos.transient_local();
   latch_qos.reliable();
