@@ -107,8 +107,18 @@ create_bridge_from_2_to_1(
   bool custom_callback_group)
 {
   auto factory = get_factory(ros1_type_name, ros2_type_name);
-  auto ros1_pub = factory->create_ros1_publisher(
-    ros1_node, ros1_topic_name, publisher_queue_size);
+
+  auto latch_qos = rclcpp::QoS(KeepLast(1));
+  latch_qos.transient_local();
+  ros::Publisher ros1_pub;
+  if(publisher_qos == latch_qos){
+    ros1_pub = factory->create_ros1_publisher(
+      ros1_node, ros1_topic_name, publisher_queue_size, true);
+  }
+  else{
+    ros1_pub = factory->create_ros1_publisher(
+      ros1_node, ros1_topic_name, publisher_queue_size);
+  }
 
   auto ros2_sub = factory->create_ros2_subscriber(
     ros2_node, ros2_topic_name, subscriber_qos, ros1_pub, ros2_pub, custom_callback_group);
