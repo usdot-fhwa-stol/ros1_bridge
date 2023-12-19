@@ -121,7 +121,7 @@ public:
 private:
   class GoalHandler
   {
-  public:
+public:
     void cancel()
     {
       std::lock_guard<std::mutex> lock(mutex_gh_);
@@ -145,9 +145,12 @@ private:
 
       std::shared_future<ROS2ClientGoalHandle> gh2_future;
       auto send_goal_ops = ROS2SendGoalOptions();
+
+
+#ifdef ACTION_GOAL_RESPONSE_CB_CONST
       send_goal_ops.goal_response_callback =
-        [this, &gh2_future](std::shared_future<ROS2GoalHandle> gh2) mutable {
-          auto goal_handle = gh2_future.get();
+        [this, &gh2_future](const ROS2GoalHandle & gh2) mutable {
+          auto & goal_handle = gh2;
           if (!goal_handle) {
             gh1_.setRejected();          // goal was not accepted by remote server
             return;
@@ -164,6 +167,27 @@ private:
             }
           }
         };
+#else
+      send_goal_ops.goal_response_callback =
+        [this, &gh2_future](std::shared_future<ROS2GoalHandle> gh2) mutable {
+          auto goal_handle = gh2_future.get();
+          if (!goal_handle) {
+            gh1_.setRejected();                // goal was not accepted by remote server
+            return;
+          }
+
+          gh1_.setAccepted();
+
+          {
+            std::lock_guard<std::mutex> lock(mutex_gh_);
+            gh2_ = goal_handle;
+
+            if (canceled_) {                // cancel was called in between
+              auto fut = client_->async_cancel_goal(gh2_);
+            }
+          }
+        };
+#endif
 
       send_goal_ops.feedback_callback = [this](ROS2GoalHandle, auto feedback2) mutable {
           ROS1Feedback feedback1;
@@ -193,7 +217,7 @@ private:
     GoalHandler(ROS1GoalHandle & gh1, ROS2ClientSharedPtr & client, rclcpp::Logger logger)
     : gh1_(gh1), gh2_(nullptr), client_(client), logger_(logger), canceled_(false) {}
 
-  private:
+private:
     ROS1GoalHandle gh1_;
     ROS2ClientGoalHandle gh2_;
     ROS2ClientSharedPtr client_;
@@ -312,7 +336,7 @@ public:
 private:
   class GoalHandler
   {
-  public:
+public:
     void cancel()
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -382,7 +406,7 @@ private:
     GoalHandler(std::shared_ptr<ROS2ServerGoalHandle> & gh2, std::shared_ptr<ROS1Client> & client)
     : gh2_(gh2), client_(client), canceled_(false) {}
 
-  private:
+private:
     std::shared_ptr<ROS1ClientGoalHandle> gh1_;
     std::shared_ptr<ROS2ServerGoalHandle> gh2_;
     std::shared_ptr<ROS1Client> client_;

@@ -10,6 +10,14 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra)
 endif()
 
+
+set(ACTION_GOAL_RESPONSE_CB_CONST_list "humble;iron")
+if("$ENV{ROS_DISTRO}" IN_LIST ACTION_GOAL_RESPONSE_CB_CONST_list)
+    #set(ACTION_GOAL_RESPONSE_CB_CONST ON)
+    add_definitions("-DACTION_GOAL_RESPONSE_CB_CONST")
+    message("Using ACTION_GOAL_RESPONSE_CB_CONST")
+endif()
+
 find_package(rmw REQUIRED)
 
 find_package(ament_cmake REQUIRED)
