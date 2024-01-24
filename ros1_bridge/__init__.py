@@ -432,12 +432,21 @@ def get_ros2_actions():
     pkgs = []
     actions = []
     rules = []
-    resource_type = 'rosidl_interfaces'
-    resources = ament_index_python.get_resources(resource_type)
-    for package_name, prefix_path in resources.items():
-        pkgs.append(package_name)
-        resource, _ = ament_index_python.get_resource(
-            resource_type, package_name)
+
+    resources = {
+        key: (val, 'rosidl_interfaces') for key, val
+        in ament_index_python.get_resources('rosidl_interfaces').items()
+    }
+    resources.update({
+        key: (val, 'ros1_bridge_foreign_mapping') for key, val
+        in ament_index_python.get_resources('ros1_bridge_foreign_mapping').items()
+    })
+
+    for package_name, val_tuple in resources.items():
+        prefix_path, resource_type = val_tuple
+        if resource_type == 'rosidl_interfaces':  # Required, otherwise linking fails
+            pkgs.append(package_name)
+        resource, _ = ament_index_python.get_resource(resource_type, package_name)
         interfaces = resource.splitlines()
         action_names = {
             i[7:-7]
@@ -650,7 +659,7 @@ class ActionMappingRule(MappingRule):
                 for ros1_field_name, ros2_field_name in data['feedback_fields_1_to_2'].items():
                     self.feedback_fields_1_to_2[ros1_field_name] = ros2_field_name
                 expected_keys += 1
-            elif len(data) > expected_keys:
+            elif len(data) > expected_keys + int('enable_foreign_mappings' in data):
                 raise RuntimeError(
                     'Mapping for package %s contains unknown field(s)' % self.ros2_package_name)
         elif len(data) > 2:
