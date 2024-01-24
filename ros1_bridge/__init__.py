@@ -481,11 +481,11 @@ def get_ros2_actions():
 
 
 class Message:
-    __slots__ = [
-        'package_name',
-        'message_name',
-        'prefix_path'
-    ]
+    # __slots__ = [
+    #     'package_name',
+    #     'message_name',
+    #     'prefix_path',
+    # ]
 
     def __init__(self, package_name, message_name, prefix_path=None):
         self.package_name = package_name
@@ -841,7 +841,7 @@ def determine_common_services(
 
 
 def determine_common_actions(
-    ros1_actions, ros2_actions, mapping_rules, message_string_pairs=None
+    ros1_actions: list[Message], ros2_actions: list[Message], mapping_rules, message_string_pairs=None
 ):
     if message_string_pairs is None:
         message_string_pairs = set()
@@ -867,7 +867,9 @@ def determine_common_actions(
                             rule.ros1_action_name == ros1_action.message_name and
                             rule.ros2_action_name == ros2_action.message_name
                         ):
+                            ros2_action.force = True
                             pairs.append((ros1_action, ros2_action))
+                            pairs = list(set(pairs))
 
     for pair in pairs:
         ros1_spec = load_ros1_action(pair[0])
@@ -888,6 +890,15 @@ def determine_common_actions(
             'feedback': []
         }
         match = True
+        force = getattr(pair[1], 'force', False)
+
+        if force:
+            # The intent was to hardcode the mapping in an xml file, but I accidentally made an automatic partial mapping
+            # of [all ros1 fields] to [ros2 fields with the same name].  Maybe another flag for "best effort" mapping?
+            ros2_fields['goal'] = [a for a in ros2_spec.goal.fields for b in ros1_spec.goal.fields() if a.name == b[1]]
+            ros2_fields['result'] = [a for a in ros2_spec.result.fields for b in ros1_spec.result.fields() if a.name == b[1]]
+            ros2_fields['feedback'] = [a for a in ros2_spec.feedback.fields for b in ros1_spec.feedback.fields() if a.name == b[1]]
+
         for direction in ['goal', 'result', 'feedback']:
             if len(ros1_fields[direction]) != len(ros2_fields[direction]):
                 match = False
