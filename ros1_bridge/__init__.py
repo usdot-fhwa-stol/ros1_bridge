@@ -1050,12 +1050,8 @@ def determine_field_mapping(ros1_msg, ros2_msg, mapping_rules, msg_idx, allow_mi
             if ros1_field_selection is None or ros2_field_selection is None:
                 continue
             try:
-                if ros1_field_selection is None:
-                    ros1_selected_fields = None
-                else:
-                    ros1_selected_fields = \
-                        get_ros1_selected_fields(
-                            ros1_field_selection, ros1_spec, msg_idx)
+                ros1_selected_fields = get_ros1_selected_fields(
+                        ros1_field_selection, ros1_spec, msg_idx)
             except IndexError:
                 print(
                     "A manual mapping refers to an invalid field '%s' " % ros1_field_selection +
@@ -1064,12 +1060,8 @@ def determine_field_mapping(ros1_msg, ros2_msg, mapping_rules, msg_idx, allow_mi
                     file=sys.stderr)
                 continue
             try:
-                if ros2_field_selection is None:
-                    ros2_selected_fields = None
-                else:
-                    ros2_selected_fields = \
-                        get_ros2_selected_fields(
-                            ros2_field_selection, ros2_spec, msg_idx)
+                ros2_selected_fields = get_ros2_selected_fields(
+                        ros2_field_selection, ros2_spec, msg_idx)
             except IndexError:
                 print(
                     "A manual mapping refers to an invalid field '%s' " % ros2_field_selection +
@@ -1102,18 +1094,21 @@ def determine_field_mapping(ros1_msg, ros2_msg, mapping_rules, msg_idx, allow_mi
 
     mapping.ros1_field_missing_in_ros2 = ros1_field_missing_in_ros2
 
-    if ros1_field_missing_in_ros2:
-        # if some fields exist in ROS 1 but not in ROS 2
-        # check that no fields exist in ROS 2 but not in ROS 1
-        # since then it might be the case that those have been renamed and should be mapped
-        for ros2_member in ros2_spec.structure.members:
-            for ros1_field in ros1_spec.parsed_fields():
-                if ros1_field.name.lower() == ros2_member.name:
-                    break
-            else:
-                # if fields from both sides are not mappable the whole message is not mappable
-                if not allow_missing:
-                    return None
+    try:
+        if ros1_field_missing_in_ros2:
+            # if some fields exist in ROS 1 but not in ROS 2
+            # check that no fields exist in ROS 2 but not in ROS 1
+            # since then it might be the case that those have been renamed and should be mapped
+            for ros2_member in ros2_spec.structure.members:
+                for ros1_field in ros1_spec.parsed_fields():
+                    if ros1_field.name.lower() == ros2_member.name:
+                        break
+                else:
+                    # if fields from both sides are not mappable the whole message is not mappable
+                    if not allow_missing:
+                        return None
+    except Exception as e:
+        print('%s' % str(e), file=sys.stderr)
 
     return mapping
 
