@@ -203,6 +203,10 @@ void update_bridge(
       ros2_publisher_qos.keep_all();
       ros2_publisher_qos.transient_local();
     }
+    else if (topic_name == "/rosout")
+    {
+      ros2_publisher_qos = rclcpp::RosoutQoS();
+    }
     try {
       bridge.bridge_handles = ros1_bridge::create_bridge_from_1_to_2(
         ros1_node, ros2_node,
