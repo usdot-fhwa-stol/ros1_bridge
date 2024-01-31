@@ -1015,7 +1015,7 @@ def get_ros2_selected_fields(ros2_field_selection, parent_ros2_spec, msg_idx):
     return tuple(selected_fields)
 
 
-def determine_field_mapping(ros1_msg, ros2_msg, mapping_rules, msg_idx):
+def determine_field_mapping(ros1_msg, ros2_msg, mapping_rules, msg_idx, allow_missing=True):
     """
     Return the first mapping object for ros1_msg and ros2_msg found in mapping_rules.
 
@@ -1047,10 +1047,15 @@ def determine_field_mapping(ros1_msg, ros2_msg, mapping_rules, msg_idx):
             continue
 
         for ros1_field_selection, ros2_field_selection in rule.fields_1_to_2.items():
+            if ros1_field_selection is None or ros2_field_selection is None:
+                continue
             try:
-                ros1_selected_fields = \
-                    get_ros1_selected_fields(
-                        ros1_field_selection, ros1_spec, msg_idx)
+                if ros1_field_selection is None:
+                    ros1_selected_fields = None
+                else:
+                    ros1_selected_fields = \
+                        get_ros1_selected_fields(
+                            ros1_field_selection, ros1_spec, msg_idx)
             except IndexError:
                 print(
                     "A manual mapping refers to an invalid field '%s' " % ros1_field_selection +
@@ -1059,9 +1064,12 @@ def determine_field_mapping(ros1_msg, ros2_msg, mapping_rules, msg_idx):
                     file=sys.stderr)
                 continue
             try:
-                ros2_selected_fields = \
-                    get_ros2_selected_fields(
-                        ros2_field_selection, ros2_spec, msg_idx)
+                if ros2_field_selection is None:
+                    ros2_selected_fields = None
+                else:
+                    ros2_selected_fields = \
+                        get_ros2_selected_fields(
+                            ros2_field_selection, ros2_spec, msg_idx)
             except IndexError:
                 print(
                     "A manual mapping refers to an invalid field '%s' " % ros2_field_selection +
@@ -1104,7 +1112,8 @@ def determine_field_mapping(ros1_msg, ros2_msg, mapping_rules, msg_idx):
                     break
             else:
                 # if fields from both sides are not mappable the whole message is not mappable
-                return None
+                if not allow_missing:
+                    return None
 
     return mapping
 
@@ -1356,6 +1365,8 @@ class Mapping:
         self.fields_1_to_2[ros1_fields] = ros2_members
         self.fields_2_to_1[ros2_members] = ros1_fields
         for ros2_member in ros2_members:
+            if ros2_member is None:
+                continue
             # If the member is not a namespaced type, skip.
             if not isinstance(ros2_member.type, rosidl_parser.definition.NamespacedType):
                 continue
