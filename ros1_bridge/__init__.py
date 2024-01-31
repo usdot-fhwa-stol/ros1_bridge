@@ -1015,7 +1015,7 @@ def get_ros2_selected_fields(ros2_field_selection, parent_ros2_spec, msg_idx):
     return tuple(selected_fields)
 
 
-def determine_field_mapping(ros1_msg, ros2_msg, mapping_rules, msg_idx, allow_missing=True):
+def determine_field_mapping(ros1_msg, ros2_msg, mapping_rules, msg_idx, allow_missing=False):
     """
     Return the first mapping object for ros1_msg and ros2_msg found in mapping_rules.
 
