@@ -484,7 +484,7 @@ public:
 
   ServiceBridge1to2 service_bridge_1_to_2(
     ros::NodeHandle & ros1_node, rclcpp::Node::SharedPtr ros2_node, const std::string & name,
-    bool custom_callback_group = false, int service_execution_timeout)
+    int service_execution_timeout, bool custom_callback_group = false)
   {
     ServiceBridge1to2 bridge;
     rclcpp::CallbackGroup::SharedPtr group = nullptr;

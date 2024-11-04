@@ -357,7 +357,7 @@ void update_bridge(
       if (factory) {
         try {
           service_bridges_1_to_2[name] = factory->service_bridge_1_to_2(
-            ros1_node, ros2_node, name, multi_threads, service_execution_timeout);
+            ros1_node, ros2_node, name, service_execution_timeout, multi_threads);
           printf("Created 1 to 2 bridge for service %s\n", name.data());
         } catch (std::runtime_error & e) {
           fprintf(stderr, "Failed to created a bridge: %s\n", e.what());
