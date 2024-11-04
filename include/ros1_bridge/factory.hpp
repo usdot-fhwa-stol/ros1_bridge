@@ -16,10 +16,10 @@
 #define  ROS1_BRIDGE__FACTORY_HPP_
 
 #include <functional>
-#include <map>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "rmw/rmw.h"
 #include "rclcpp/rclcpp.hpp"
@@ -34,32 +34,6 @@
 namespace ros1_bridge
 {
 
-static rclcpp::CallbackGroup::SharedPtr get_callback_group(
-  rclcpp::Node::SharedPtr ros2_node,
-  const std::string & topic_name = "")
-{
-  auto node_base = ros2_node->get_node_base_interface();
-  rclcpp::CallbackGroup::SharedPtr group = nullptr;
-
-  typedef std::map<std::string, rclcpp::CallbackGroup::SharedPtr> CallbackGroupMap;
-  static CallbackGroupMap s_callbackgroups;
-  auto iter = s_callbackgroups.find(topic_name);
-  if (iter != s_callbackgroups.end()) {
-    return iter->second;
-  }
-
-  group = ros2_node->create_callback_group(
-    topic_name.empty() ?
-    // create a shared callback group with Reentrant for creating all ros2 clients and services
-    rclcpp::CallbackGroupType::Reentrant :
-    // create one CallbackGroup with MutuallyExclusive for each topic
-    // to ensure that the message data of each topic is received in order
-    rclcpp::CallbackGroupType::MutuallyExclusive);
-  s_callbackgroups.insert({topic_name, group});
-
-  return group;
-}
-
 template<typename ROS1_T, typename ROS2_T>
 class Factory : public FactoryInterface
 {
@@ -68,7 +42,14 @@ public:
     const std::string & ros1_type_name, const std::string & ros2_type_name)
   : ros1_type_name_(ros1_type_name),
     ros2_type_name_(ros2_type_name)
-  {}
+  {
+    ts_lib_ = rclcpp::get_typesupport_library(ros2_type_name, "rosidl_typesupport_cpp");
+    if (static_cast<bool>(ts_lib_)) {
+      type_support_ = rclcpp::get_typesupport_handle(
+        ros2_type_name, "rosidl_typesupport_cpp",
+        *ts_lib_);
+    }
+  }
 
   ros::Publisher
   create_ros1_publisher(
@@ -127,7 +108,7 @@ public:
       new ros::SubscriptionCallbackHelperT<const ros::MessageEvent<ROS1_T const> &>(
         boost::bind(
           &Factory<ROS1_T, ROS2_T>::ros1_callback,
-          _1, ros2_pub, ros1_type_name_, ros2_type_name_, logger)));
+          boost::placeholders::_1, ros2_pub, ros1_type_name_, ros2_type_name_, logger)));
     return node.subscribe(ops);
   }
 
@@ -137,12 +118,10 @@ public:
     const std::string & topic_name,
     size_t queue_size,
     ros::Publisher ros1_pub,
-    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr,
-    bool custom_callback_group = false)
+    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr)
   {
     auto qos = rclcpp::SensorDataQoS(rclcpp::KeepLast(queue_size));
-    return create_ros2_subscriber(
-      node, topic_name, qos, ros1_pub, ros2_pub, custom_callback_group);
+    return create_ros2_subscriber(node, topic_name, qos, ros1_pub, ros2_pub);
   }
 
   rclcpp::SubscriptionBase::SharedPtr
@@ -151,13 +130,12 @@ public:
     const std::string & topic_name,
     const rmw_qos_profile_t & qos,
     ros::Publisher ros1_pub,
-    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr,
-    bool custom_callback_group = false)
+    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr)
   {
     auto rclcpp_qos = rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(qos));
     rclcpp_qos.get_rmw_qos_profile() = qos;
     return create_ros2_subscriber(
-      node, topic_name, rclcpp_qos, ros1_pub, ros2_pub, custom_callback_group);
+      node, topic_name, rclcpp_qos, ros1_pub, ros2_pub);
   }
 
   rclcpp::SubscriptionBase::SharedPtr
@@ -166,8 +144,7 @@ public:
     const std::string & topic_name,
     const rclcpp::QoS & qos,
     ros::Publisher ros1_pub,
-    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr,
-    bool custom_callback_group = false)
+    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr)
   {
     std::function<
       void(const typename ROS2_T::SharedPtr msg, const rclcpp::MessageInfo & msg_info)> callback;
@@ -176,21 +153,18 @@ public:
       ros1_pub, ros1_type_name_, ros2_type_name_, node->get_logger(), ros2_pub);
     rclcpp::SubscriptionOptions options;
     options.ignore_local_publications = true;
-    if (custom_callback_group) {
-      options.callback_group = ros1_bridge::get_callback_group(node, topic_name);
-    }
     return node->create_subscription<ROS2_T>(
       topic_name, qos, callback, options);
   }
 
-  void convert_1_to_2(const void * ros1_msg, void * ros2_msg) override
+  void convert_1_to_2(const void * ros1_msg, void * ros2_msg) const override
   {
     auto typed_ros1_msg = static_cast<const ROS1_T *>(ros1_msg);
     auto typed_ros2_msg = static_cast<ROS2_T *>(ros2_msg);
     convert_1_to_2(*typed_ros1_msg, *typed_ros2_msg);
   }
 
-  void convert_2_to_1(const void * ros2_msg, void * ros1_msg) override
+  void convert_2_to_1(const void * ros2_msg, void * ros1_msg) const override
   {
     auto typed_ros2_msg = static_cast<const ROS2_T *>(ros2_msg);
     auto typed_ros1_msg = static_cast<ROS1_T *>(ros1_msg);
@@ -300,9 +274,122 @@ public:
     const ROS2_T & ros2_msg,
     ROS1_T & ros1_msg);
 
+
+  const char * get_ros1_md5sum() const override
+  {
+    return ros::message_traits::MD5Sum<ROS1_T>::value();
+  }
+
+  const char * get_ros1_data_type() const override
+  {
+    return ros::message_traits::DataType<ROS1_T>::value();
+  }
+
+  const char * get_ros1_message_definition() const override
+  {
+    return ros::message_traits::Definition<ROS1_T>::value();
+  }
+
+  bool convert_2_to_1_generic(
+    const rclcpp::SerializedMessage & ros2_msg,
+    std::vector<uint8_t> & ros1_msg) const override
+  {
+    if (type_support_ == nullptr) {
+      return false;
+    }
+
+    // Deserialize to a ROS2 message
+    ROS2_T ros2_typed_msg;
+    if (rmw_deserialize(
+        &ros2_msg.get_rcl_serialized_message(), type_support_,
+        &ros2_typed_msg) != RMW_RET_OK)
+    {
+      return false;
+    }
+
+    // Call convert_2_to_1
+    ROS1_T ros1_typed_msg;
+    convert_2_to_1(&ros2_typed_msg, &ros1_typed_msg);
+
+    // Serialize the ROS1 message into a buffer
+    uint32_t length = ros::serialization::serializationLength(ros1_typed_msg);
+    ros1_msg.resize(length);
+    ros::serialization::OStream out_stream(ros1_msg.data(), length);
+    ros::serialization::serialize(out_stream, ros1_typed_msg);
+
+    return true;
+  }
+
+  bool convert_1_to_2_generic(
+    const std::vector<uint8_t> & ros1_msg,
+    rclcpp::SerializedMessage & ros2_msg) const override
+  {
+    if (type_support_ == nullptr) {
+      return false;
+    }
+
+    // Deserialize to a ROS1 message
+    ROS1_T ros1_typed_msg;
+    // Both IStream and OStream inherits their functionality from Stream
+    // So IStream needs a non-const data reference to data
+    // However deserialization function probably shouldn't modify data they are serializing from
+    uint8_t * ros1_msg_data = const_cast<uint8_t *>(ros1_msg.data());
+    ros::serialization::IStream in_stream(ros1_msg_data, ros1_msg.size());
+    ros::serialization::deserialize(in_stream, ros1_typed_msg);
+
+    // Call convert_1_to_2
+    ROS2_T ros2_typed_msg;
+    convert_1_to_2(&ros1_typed_msg, &ros2_typed_msg);
+
+    // Serialize ROS2 message
+    if (rmw_serialize(
+        &ros2_typed_msg, type_support_,
+        &ros2_msg.get_rcl_serialized_message()) != RMW_RET_OK)
+    {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * @brief Writes (serializes) a ROS2 class directly to a ROS1 stream
+   */
+  static void convert_2_to_1(const ROS2_T & msg, ros::serialization::OStream & out_stream);
+
+  /**
+   * @brief Reads (deserializes) a ROS2 class directly from a ROS1 stream
+   */
+  static void convert_1_to_2(ros::serialization::IStream & in_stream, ROS2_T & msg);
+
+  /**
+   * @brief Determines the length of a ROS2 class if it was serialized to a ROS1 stream
+   */
+  static uint32_t length_2_as_1_stream(const ROS2_T & msg);
+
+  /**
+   * @brief Internal helper functions conversion for ROS2 message types to/from ROS1 streams
+   *
+   * This function is not meant to be used externally. However, since this the internal helper
+   * functions call each other for sub messages they must be public.
+   */
+  static void internal_stream_translate_helper(
+    ros::serialization::OStream & stream,
+    const ROS2_T & msg);
+  static void internal_stream_translate_helper(
+    ros::serialization::IStream & stream,
+    ROS2_T & msg);
+  static void internal_stream_translate_helper(
+    ros::serialization::LStream & stream,
+    const ROS2_T & msg);
+
   std::string ros1_type_name_;
   std::string ros2_type_name_;
+
+  std::shared_ptr<rcpputils::SharedLibrary> ts_lib_;
+  const rosidl_message_type_support_t * type_support_ = nullptr;
 };
+
 
 template<class ROS1_T, class ROS2_T>
 class ServiceFactory : public ServiceFactoryInterface
@@ -328,7 +415,8 @@ public:
 
   bool forward_1_to_2(
     rclcpp::ClientBase::SharedPtr cli, rclcpp::Logger logger,
-    const ROS1Request & request1, ROS1Response & response1)
+    const ROS1Request & request1, ROS1Response & response1,
+    int service_execution_timeout)
   {
     auto client = std::dynamic_pointer_cast<rclcpp::Client<ROS2_T>>(cli);
     if (!client) {
@@ -345,14 +433,16 @@ public:
       }
       RCLCPP_WARN(logger, "Waiting for ROS 2 service %s...", cli->get_service_name());
     }
-    auto timeout = std::chrono::seconds(5);
+    auto timeout = std::chrono::seconds(service_execution_timeout);
     auto future = client->async_send_request(request2);
     auto status = future.wait_for(timeout);
     if (status == std::future_status::ready) {
       auto response2 = future.get();
       translate_2_to_1(*response2, response1);
     } else {
-      RCLCPP_ERROR(logger, "Failed to get response from ROS 2 service %s", cli->get_service_name());
+      RCLCPP_ERROR(
+        logger, "Failed to get response from ROS 2 service %s within %d seconds",
+        cli->get_service_name(), service_execution_timeout);
       return false;
     }
     return true;
@@ -360,26 +450,20 @@ public:
 
   ServiceBridge1to2 service_bridge_1_to_2(
     ros::NodeHandle & ros1_node, rclcpp::Node::SharedPtr ros2_node, const std::string & name,
-    bool custom_callback_group = false)
+    int service_execution_timeout)
   {
     ServiceBridge1to2 bridge;
-    rclcpp::CallbackGroup::SharedPtr group = nullptr;
-    if (custom_callback_group) {
-      group = ros1_bridge::get_callback_group(ros2_node);
-    }
-    bridge.client = ros2_node->create_client<ROS2_T>(
-      name, rmw_qos_profile_services_default, group);
+    bridge.client = ros2_node->create_client<ROS2_T>(name);
     auto m = &ServiceFactory<ROS1_T, ROS2_T>::forward_1_to_2;
     auto f = std::bind(
       m, this, bridge.client, ros2_node->get_logger(), std::placeholders::_1,
-      std::placeholders::_2);
+      std::placeholders::_2, service_execution_timeout);
     bridge.server = ros1_node.advertiseService<ROS1Request, ROS1Response>(name, f);
     return bridge;
   }
 
   ServiceBridge2to1 service_bridge_2_to_1(
-    ros::NodeHandle & ros1_node, rclcpp::Node::SharedPtr ros2_node, const std::string & name,
-    bool custom_callback_group = false)
+    ros::NodeHandle & ros1_node, rclcpp::Node::SharedPtr ros2_node, const std::string & name)
   {
     ServiceBridge2to1 bridge;
     bridge.client = ros1_node.serviceClient<ROS1_T>(name);
@@ -392,12 +476,7 @@ public:
     f = std::bind(
       m, this, bridge.client, ros2_node->get_logger(), std::placeholders::_1,
       std::placeholders::_2, std::placeholders::_3);
-    rclcpp::CallbackGroup::SharedPtr group = nullptr;
-    if (custom_callback_group) {
-      group = ros1_bridge::get_callback_group(ros2_node);
-    }
-    bridge.server = ros2_node->create_service<ROS2_T>(
-      name, f, rmw_qos_profile_services_default, group);
+    bridge.server = ros2_node->create_service<ROS2_T>(name, f);
     return bridge;
   }
 
