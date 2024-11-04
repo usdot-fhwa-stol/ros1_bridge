@@ -340,6 +340,10 @@ void update_bridge(
     }
   }
 
+  int service_execution_timeout{5};
+  ros1_node.getParamCached(
+    "ros1_bridge/dynamic_bridge/service_execution_timeout", service_execution_timeout);
+
   // create bridges for ros2 services
   for (auto & service : ros2_services) {
     auto & name = service.first;
@@ -353,7 +357,7 @@ void update_bridge(
       if (factory) {
         try {
           service_bridges_1_to_2[name] = factory->service_bridge_1_to_2(
-            ros1_node, ros2_node, name, multi_threads);
+            ros1_node, ros2_node, name, multi_threads, service_execution_timeout);
           printf("Created 1 to 2 bridge for service %s\n", name.data());
         } catch (std::runtime_error & e) {
           fprintf(stderr, "Failed to created a bridge: %s\n", e.what());
@@ -418,7 +422,7 @@ void get_ros1_service_info(
       transport->close();
     });
   if (!transport->connect(host, port)) {
-    fprintf(stderr, "Failed to connect to %s:%d\n", host.data(), port);
+    fprintf(stderr, "Failed to connect to %s (%s:%d)\n", name.data(), host.data(), port);
     return;
   }
   ros::M_string header_out;

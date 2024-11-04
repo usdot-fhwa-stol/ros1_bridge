@@ -32,7 +32,10 @@ endif()
 
 find_ros1_package(roscpp)
 if(NOT ros1_roscpp_FOUND)
-  message(WARNING "Failed to find ROS 1 roscpp, skipping...")
+  if(NOT ROS1_PACKAGES_UNAVAILABLE)
+    # Only warn if ROS1 packages were expected to be available
+    message(WARNING "Failed to find ROS 1 roscpp, skipping...")
+  endif()
   # call ament_package() to avoid ament_tools treating this as a plain CMake pkg
   ament_package(
     CONFIG_EXTRAS ${cmake_extras_files}
@@ -41,6 +44,10 @@ if(NOT ros1_roscpp_FOUND)
 endif()
 
 find_ros1_package(std_msgs REQUIRED)
+
+# Dependency that we should only look for if ROS 1 is installed (it's not present on a ROS 2
+# system; see https://github.com/ros2/ros1_bridge/pull/331#issuecomment-1188111510)
+find_package(xmlrpcpp REQUIRED)
 
 # find ROS 1 packages with messages / services
 include(cmake/find_ros1_interface_packages.cmake)
@@ -74,6 +81,42 @@ if(BUILD_TESTING)
     endif()
     set(TEST_ROS1_BRIDGE TRUE)
   endif()
+
+  find_package(ament_cmake_gtest REQUIRED)
+  find_package(geometry_msgs REQUIRED)
+  find_package(std_msgs REQUIRED)
+  find_package(sensor_msgs REQUIRED)
+  find_ros1_package(geometry_msgs)
+  find_ros1_package(std_msgs)
+  find_ros1_package(sensor_msgs)
+  if(ros1_geometry_msgs_FOUND AND ros1_sensor_msgs_FOUND AND ros1_std_msgs_FOUND)
+    ament_add_gtest(test_convert_generic test/test_convert_generic.cpp)
+    ament_target_dependencies(test_convert_generic
+      "geometry_msgs"
+      "rclcpp"
+      "ros1_roscpp"
+      "ros1_sensor_msgs"
+      "ros1_std_msgs"
+      "ros1_geometry_msgs"
+      "sensor_msgs"
+      "std_msgs"
+    )
+    target_link_libraries(test_convert_generic ${PROJECT_NAME})
+
+    ament_add_gtest(test_ros2_to_ros1_serialization test/test_ros2_to_ros1_serialization.cpp)
+    ament_target_dependencies(test_ros2_to_ros1_serialization
+      "geometry_msgs"
+      "rclcpp"
+      "ros1_roscpp"
+      "ros1_sensor_msgs"
+      "ros1_std_msgs"
+      "ros1_geometry_msgs"
+      "sensor_msgs"
+      "std_msgs"
+    )
+    target_link_libraries(test_ros2_to_ros1_serialization ${PROJECT_NAME})
+  endif()
+
 endif()
 
 ament_export_include_directories(include)
