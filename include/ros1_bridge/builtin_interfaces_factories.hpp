@@ -21,6 +21,7 @@
 #include <std_msgs/Duration.h>
 #include <std_msgs/Header.h>
 #include <std_msgs/Time.h>
+#include <rosgraph_msgs/Log.h>
 
 #include <memory>
 #include <string>
@@ -29,6 +30,7 @@
 #include <builtin_interfaces/msg/duration.hpp>
 #include <builtin_interfaces/msg/time.hpp>
 #include <std_msgs/msg/header.hpp>
+#include <rcl_interfaces/msg/log.hpp>
 
 #include "ros1_bridge/factory.hpp"
 
@@ -131,6 +133,26 @@ Factory<
 >::internal_stream_translate_helper(
   ros::serialization::LStream & stream,
   const builtin_interfaces::msg::Time & msg);
+
+
+
+template<>
+void
+Factory<
+    rosgraph_msgs::Log,
+    rcl_interfaces::msg::Log
+    >::convert_1_to_2(
+    const rosgraph_msgs::Log & ros1_msg,
+    rcl_interfaces::msg::Log & ros2_msg);
+
+template<>
+void
+Factory<
+    rosgraph_msgs::Log,
+    rcl_interfaces::msg::Log
+    >::convert_2_to_1(
+    const rcl_interfaces::msg::Log & ros2_msg,
+    rosgraph_msgs::Log & ros1_msg);
 
 }  // namespace ros1_bridge
 
