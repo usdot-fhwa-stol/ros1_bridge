@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <xmlrpcpp/XmlRpcException.h>
-
 #include <list>
 #include <string>
 
@@ -31,33 +29,29 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "ros1_bridge/bridge.hpp"
-#include "parameter_bridge_helper.hpp"
+
 
 int main(int argc, char * argv[])
 {
-  // ROS 2 node
-  rclcpp::init(argc, argv);
-  auto ros2_node = rclcpp::Node::make_shared("ros_bridge");
-  
   // ROS 1 node
   ros::init(argc, argv, "ros_bridge");
   ros::NodeHandle ros1_node;
+
+  // ROS 2 node
+  rclcpp::init(argc, argv);
+  auto ros2_node = rclcpp::Node::make_shared("ros_bridge");
 
   std::list<ros1_bridge::BridgeHandles> all_handles;
   std::list<ros1_bridge::ServiceBridge1to2> service_bridges_1_to_2;
   std::list<ros1_bridge::ServiceBridge2to1> service_bridges_2_to_1;
 
   // bridge all topics listed in a ROS 1 parameter
-  // the topics parameter needs to be an array
+  // the parameter needs to be an array
   // and each item needs to be a dictionary with the following keys;
-  // topic: the name of the topic to bridge (e.g. '/topic_name')
-  // type: the type of the topic to bridge (e.g. 'pkgname/msg/MsgName')
+  // topic: the name of the topic to bridge
+  // type: the type of the topic to bridge
   // queue_size: the queue size to use (default: 100)
   const char * topics_parameter_name = "topics";
-  // the services parameters need to be arrays
-  // and each item needs to be a dictionary with the following keys;
-  // service: the name of the service to bridge (e.g. '/service_name')
-  // type: the type of the service to bridge (e.g. 'pkgname/srv/SrvName')
   const char * services_1_to_2_parameter_name = "services_1_to_2";
   const char * services_2_to_1_parameter_name = "services_2_to_1";
   if (argc > 1) {
@@ -89,18 +83,9 @@ int main(int argc, char * argv[])
         topic_name.c_str(), type_name.c_str());
 
       try {
-        if (topics[i].hasMember("qos")) {
-          printf("Setting up QoS for '%s': ", topic_name.c_str());
-          auto qos_settings = ros1_bridge::qos_from_params(topics[i]["qos"]);
-          printf("\n");
-          ros1_bridge::BridgeHandles handles = ros1_bridge::create_bidirectional_bridge(
-            ros1_node, ros2_node, "", type_name, topic_name, queue_size, qos_settings);
-          all_handles.push_back(handles);
-        } else {
-          ros1_bridge::BridgeHandles handles = ros1_bridge::create_bidirectional_bridge(
-            ros1_node, ros2_node, "", type_name, topic_name, queue_size);
-          all_handles.push_back(handles);
-        }
+        ros1_bridge::BridgeHandles handles = ros1_bridge::create_bidirectional_bridge(
+          ros1_node, ros2_node, "", type_name, topic_name, queue_size);
+        all_handles.push_back(handles);
       } catch (std::runtime_error & e) {
         fprintf(
           stderr,
@@ -123,33 +108,15 @@ int main(int argc, char * argv[])
   {
     for (size_t i = 0; i < static_cast<size_t>(services_1_to_2.size()); ++i) {
       std::string service_name = static_cast<std::string>(services_1_to_2[i]["service"]);
+      std::string package_name = static_cast<std::string>(services_1_to_2[i]["package"]);
       std::string type_name = static_cast<std::string>(services_1_to_2[i]["type"]);
-      {
-        // for backward compatibility
-        std::string package_name = static_cast<std::string>(services_1_to_2[i]["package"]);
-        if (!package_name.empty()) {
-          fprintf(
-            stderr,
-            "The service '%s' uses the key 'package' which is deprecated for "
-            "services. Instead prepend the 'type' value with '<package>/'.\n",
-            service_name.c_str());
-          type_name = package_name + "/" + type_name;
-        }
-      }
       printf(
-        "Trying to create bridge for ROS 2 service '%s' with type '%s'\n",
-        service_name.c_str(), type_name.c_str());
+        "Trying to create bridge for ROS 2 service '%s' "
+        "with package '%s' and type '%s'\n",
+        service_name.c_str(), package_name.c_str(), type_name.c_str());
 
-      const size_t index = type_name.find("/");
-      if (index == std::string::npos) {
-        fprintf(
-          stderr,
-          "the service '%s' has a type '%s' without a slash.\n",
-          service_name.c_str(), type_name.c_str());
-        continue;
-      }
       auto factory = ros1_bridge::get_service_factory(
-        "ros2", type_name.substr(0, index), type_name.substr(index + 1));
+        "ros2", package_name, type_name);
       if (factory) {
         try {
           service_bridges_1_to_2.push_back(
@@ -159,14 +126,16 @@ int main(int argc, char * argv[])
         } catch (std::runtime_error & e) {
           fprintf(
             stderr,
-            "failed to create bridge ROS 1 service '%s' with type '%s': %s\n",
-            service_name.c_str(), type_name.c_str(), e.what());
+            "failed to create bridge ROS 1 service '%s' "
+            "with package '%s' and type '%s': %s\n",
+            service_name.c_str(), type_name.c_str(), type_name.c_str(), e.what());
         }
       } else {
         fprintf(
           stderr,
-          "failed to create bridge ROS 1 service '%s' no conversion for type '%s'\n",
-          service_name.c_str(), type_name.c_str());
+          "failed to create bridge ROS 1 service '%s' "
+          "no conversion for package '%s' and type '%s'\n",
+          service_name.c_str(), package_name.c_str(), type_name.c_str());
       }
     }
 
@@ -185,34 +154,15 @@ int main(int argc, char * argv[])
   {
     for (size_t i = 0; i < static_cast<size_t>(services_2_to_1.size()); ++i) {
       std::string service_name = static_cast<std::string>(services_2_to_1[i]["service"]);
+      std::string package_name = static_cast<std::string>(services_2_to_1[i]["package"]);
       std::string type_name = static_cast<std::string>(services_2_to_1[i]["type"]);
-      {
-        // for backward compatibility
-        std::string package_name = static_cast<std::string>(services_2_to_1[i]["package"]);
-        if (!package_name.empty()) {
-          fprintf(
-            stderr,
-            "The service '%s' uses the key 'package' which is deprecated for "
-            "services. Instead prepend the 'type' value with '<package>/'.\n",
-            service_name.c_str());
-          type_name = package_name + "/" + type_name;
-        }
-      }
       printf(
-        "Trying to create bridge for ROS 1 service '%s' with type '%s'\n",
-        service_name.c_str(), type_name.c_str());
-
-      const size_t index = type_name.find("/");
-      if (index == std::string::npos) {
-        fprintf(
-          stderr,
-          "the service '%s' has a type '%s' without a slash.\n",
-          service_name.c_str(), type_name.c_str());
-        continue;
-      }
+        "Trying to create bridge for ROS 1 service '%s' "
+        "with package '%s' and type '%s'\n",
+        service_name.c_str(), package_name.c_str(), type_name.c_str());
 
       auto factory = ros1_bridge::get_service_factory(
-        "ros1", type_name.substr(0, index), type_name.substr(index + 1));
+        "ros1", package_name, type_name);
       if (factory) {
         try {
           service_bridges_2_to_1.push_back(
@@ -221,14 +171,16 @@ int main(int argc, char * argv[])
         } catch (std::runtime_error & e) {
           fprintf(
             stderr,
-            "failed to create bridge ROS 2 service '%s' with type '%s': %s\n",
-            service_name.c_str(), type_name.c_str(), e.what());
+            "failed to create bridge ROS 2 service '%s' "
+            "with package '%s' and type '%s': %s\n",
+            service_name.c_str(), type_name.c_str(), type_name.c_str(), e.what());
         }
       } else {
         fprintf(
           stderr,
-          "failed to create bridge ROS 2 service '%s' no conversion for type '%s'\n",
-          service_name.c_str(), type_name.c_str());
+          "failed to create bridge ROS 2 service '%s' "
+          "no conversion for package '%s' and type '%s'\n",
+          service_name.c_str(), package_name.c_str(), type_name.c_str());
       }
     }
 

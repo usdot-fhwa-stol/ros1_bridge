@@ -17,16 +17,13 @@
 #include <memory>
 #include <set>
 #include <string>
-#include <utility>
 #include <vector>
-#include <unordered_set>
 
 // include ROS 1
 #ifdef __clang__
 # pragma clang diagnostic push
 # pragma clang diagnostic ignored "-Wunused-parameter"
 #endif
-#include "ros/callback_queue.h"
 #include "ros/ros.h"
 #ifdef __clang__
 # pragma clang diagnostic pop
@@ -38,10 +35,12 @@
 
 // include ROS 2
 #include "rclcpp/rclcpp.hpp"
-#include "rcpputils/scope_exit.hpp"
+#include "rclcpp/scope_exit.hpp"
+
+#include "rcutils/get_env.h"
 
 #include "ros1_bridge/bridge.hpp"
-#include "parameter_bridge_helper.hpp"
+
 
 std::mutex g_bridge_mutex;
 
@@ -72,8 +71,7 @@ bool get_flag_option(const std::vector<std::string> & args, const std::string & 
 
 bool parse_command_options(
   int argc, char ** argv, bool & output_topic_introspection,
-  bool & bridge_all_1to2_topics, bool & bridge_all_2to1_topics,
-  bool & multi_threads)
+  bool & bridge_all_1to2_topics, bool & bridge_all_2to1_topics)
 {
   std::vector<std::string> args(argv, argv + argc);
 
@@ -91,8 +89,6 @@ bool parse_command_options(
     ss << "a matching subscriber." << std::endl;
     ss << " --bridge-all-2to1-topics: Bridge all ROS 2 topics to ROS 1, whether or not there is ";
     ss << "a matching subscriber." << std::endl;
-    ss << " --multi-threads: Bridge with multiple threads for spinner of ROS 1 and ROS 2.";
-    ss << std::endl;
     std::cout << ss.str();
     return false;
   }
@@ -124,7 +120,6 @@ bool parse_command_options(
   bool bridge_all_topics = get_flag_option(args, "--bridge-all-topics");
   bridge_all_1to2_topics = bridge_all_topics || get_flag_option(args, "--bridge-all-1to2-topics");
   bridge_all_2to1_topics = bridge_all_topics || get_flag_option(args, "--bridge-all-2to1-topics");
-  multi_threads = get_flag_option(args, "--multi-threads");
 
   return true;
 }
@@ -142,9 +137,7 @@ void update_bridge(
   std::map<std::string, Bridge2to1HandlesAndMessageTypes> & bridges_2to1,
   std::map<std::string, ros1_bridge::ServiceBridge1to2> & service_bridges_1_to_2,
   std::map<std::string, ros1_bridge::ServiceBridge2to1> & service_bridges_2_to_1,
-  const std::unordered_set<std::string> & parameter_reserved_connections,
-  bool bridge_all_1to2_topics, bool bridge_all_2to1_topics,
-  bool multi_threads = false)
+  bool bridge_all_1to2_topics, bool bridge_all_2to1_topics)
 {
   std::lock_guard<std::mutex> lock(g_bridge_mutex);
 
@@ -189,16 +182,11 @@ void update_bridge(
     bridge.ros1_type_name = ros1_type_name;
     bridge.ros2_type_name = ros2_type_name;
 
-    auto ros2_publisher_qos = rclcpp::QoS(rclcpp::KeepLast(10));
-    if (topic_name == "/tf_static") {
-      ros2_publisher_qos.keep_all();
-      ros2_publisher_qos.transient_local();
-    }
     try {
       bridge.bridge_handles = ros1_bridge::create_bridge_from_1_to_2(
         ros1_node, ros2_node,
         bridge.ros1_type_name, topic_name, 10,
-        bridge.ros2_type_name, topic_name, ros2_publisher_qos);
+        bridge.ros2_type_name, topic_name, 10);
     } catch (std::runtime_error & e) {
       fprintf(
         stderr,
@@ -264,9 +252,7 @@ void update_bridge(
       bridge.bridge_handles = ros1_bridge::create_bridge_from_2_to_1(
         ros2_node, ros1_node,
         bridge.ros2_type_name, topic_name, 10,
-        bridge.ros1_type_name, topic_name, 10,
-        nullptr,
-        multi_threads);
+        bridge.ros1_type_name, topic_name, 10);
     } catch (std::runtime_error & e) {
       fprintf(
         stderr,
@@ -290,9 +276,8 @@ void update_bridge(
   for (auto it : bridges_1to2) {
     std::string topic_name = it.first;
     if (
-      parameter_reserved_connections.find(topic_name) == parameter_reserved_connections.end() // This topic is allowed to be removed
-      && (ros1_publishers.find(topic_name) == ros1_publishers.end() ||
-        (!bridge_all_1to2_topics && ros2_subscribers.find(topic_name) == ros2_subscribers.end())))
+      ros1_publishers.find(topic_name) == ros1_publishers.end() ||
+      (!bridge_all_1to2_topics && ros2_subscribers.find(topic_name) == ros2_subscribers.end()))
     {
       to_be_removed_1to2.push_back(topic_name);
     }
@@ -306,9 +291,8 @@ void update_bridge(
   for (auto it : bridges_2to1) {
     std::string topic_name = it.first;
     if (
-      parameter_reserved_connections.find(topic_name) == parameter_reserved_connections.end() // This topic is allowed to be removed
-      && ((!bridge_all_2to1_topics && ros1_subscribers.find(topic_name) == ros1_subscribers.end()) ||
-        ros2_publishers.find(topic_name) == ros2_publishers.end()))
+      (!bridge_all_2to1_topics && ros1_subscribers.find(topic_name) == ros1_subscribers.end()) ||
+      ros2_publishers.find(topic_name) == ros2_publishers.end())
     {
       to_be_removed_2to1.push_back(topic_name);
     }
@@ -330,8 +314,7 @@ void update_bridge(
         "ros1", details.at("package"), details.at("name"));
       if (factory) {
         try {
-          service_bridges_2_to_1[name] = factory->service_bridge_2_to_1(
-            ros1_node, ros2_node, name, multi_threads);
+          service_bridges_2_to_1[name] = factory->service_bridge_2_to_1(ros1_node, ros2_node, name);
           printf("Created 2 to 1 bridge for service %s\n", name.data());
         } catch (std::runtime_error & e) {
           fprintf(stderr, "Failed to created a bridge: %s\n", e.what());
@@ -352,8 +335,7 @@ void update_bridge(
         "ros2", details.at("package"), details.at("name"));
       if (factory) {
         try {
-          service_bridges_1_to_2[name] = factory->service_bridge_1_to_2(
-            ros1_node, ros2_node, name, multi_threads);
+          service_bridges_1_to_2[name] = factory->service_bridge_1_to_2(ros1_node, ros2_node, name);
           printf("Created 1 to 2 bridge for service %s\n", name.data());
         } catch (std::runtime_error & e) {
           fprintf(stderr, "Failed to created a bridge: %s\n", e.what());
@@ -364,9 +346,7 @@ void update_bridge(
 
   // remove obsolete ros1 services
   for (auto it = service_bridges_2_to_1.begin(); it != service_bridges_2_to_1.end(); ) {
-    if (parameter_reserved_connections.find(it->first) == parameter_reserved_connections.end() // This topic is allowed to be removed
-       && ros1_services.find(it->first) == ros1_services.end()) {
-
+    if (ros1_services.find(it->first) == ros1_services.end()) {
       printf("Removed 2 to 1 bridge for service %s\n", it->first.data());
       try {
         it = service_bridges_2_to_1.erase(it);
@@ -380,8 +360,7 @@ void update_bridge(
 
   // remove obsolete ros2 services
   for (auto it = service_bridges_1_to_2.begin(); it != service_bridges_1_to_2.end(); ) {
-    if (parameter_reserved_connections.find(it->first) == parameter_reserved_connections.end() // This topic is allowed to be removed
-        && ros2_services.find(it->first) == ros2_services.end()) {
+    if (ros2_services.find(it->first) == ros2_services.end()) {
       printf("Removed 1 to 2 bridge for service %s\n", it->first.data());
       try {
         it->second.server.shutdown();
@@ -413,7 +392,7 @@ void get_ros1_service_info(
     return;
   }
   ros::TransportTCPPtr transport(new ros::TransportTCP(nullptr, ros::TransportTCP::SYNCHRONOUS));
-  auto transport_exit = rcpputils::make_scope_exit(
+  auto transport_exit = rclcpp::make_scope_exit(
     [transport]() {
       transport->close();
     });
@@ -474,10 +453,8 @@ int main(int argc, char * argv[])
   bool output_topic_introspection;
   bool bridge_all_1to2_topics;
   bool bridge_all_2to1_topics;
-  bool multi_threads;
   if (!parse_command_options(
-      argc, argv, output_topic_introspection, bridge_all_1to2_topics, bridge_all_2to1_topics,
-      multi_threads))
+      argc, argv, output_topic_introspection, bridge_all_1to2_topics, bridge_all_2to1_topics))
   {
     return 0;
   }
@@ -490,15 +467,7 @@ int main(int argc, char * argv[])
   // ROS 1 node
   ros::init(argc, argv, "ros_bridge");
   ros::NodeHandle ros1_node;
-  std::unique_ptr<ros::CallbackQueue> ros1_callback_queue = nullptr;
-  if (multi_threads) {
-    ros1_callback_queue = std::make_unique<ros::CallbackQueue>();
-    ros1_node.setCallbackQueue(ros1_callback_queue.get());
-  }
-  
-  ////////////
-  // TOPIC CACHE
-  ////////////
+
   // mapping of available topic names to type names
   std::map<std::string, std::string> ros1_publishers;
   std::map<std::string, std::string> ros1_subscribers;
@@ -509,268 +478,8 @@ int main(int argc, char * argv[])
 
   std::map<std::string, Bridge1to2HandlesAndMessageTypes> bridges_1to2;
   std::map<std::string, Bridge2to1HandlesAndMessageTypes> bridges_2to1;
-  std::list<ros1_bridge::BridgeHandles> all_parameter_based_handles;
   std::map<std::string, ros1_bridge::ServiceBridge1to2> service_bridges_1_to_2;
   std::map<std::string, ros1_bridge::ServiceBridge2to1> service_bridges_2_to_1;
-  std::unordered_set<std::string> parameter_reserved_connections;
-
-
-  //////////////////////////
-  //
-  // LOAD FIXED TOPICS AND SERVICES FROM PARAMETERS
-  //
-  //////////////////////////
-
-  { // parameter-bridge scope for variable name safety
-
-    // bridge all topics listed in a ROS 1 parameter
-    // the topics parameter needs to be an array
-    // and each item needs to be a dictionary with the following keys;
-    // topic: the name of the topic to bridge (e.g. '/topic_name')
-    // type: the type of the topic to bridge (e.g. 'pkgname/msg/MsgName')
-    // queue_size: the queue size to use (default: 100)
-    const char * topics_parameter_name = "topics";
-    // the services parameters need to be arrays
-    // and each item needs to be a dictionary with the following keys;
-    // service: the name of the service to bridge (e.g. '/service_name')
-    // type: the type of the service to bridge (e.g. 'pkgname/srv/SrvName')
-    const char * services_1_to_2_parameter_name = "services_1_to_2";
-    const char * services_2_to_1_parameter_name = "services_2_to_1";
-
-    // Topics
-    XmlRpc::XmlRpcValue topics;
-    if (
-      ros1_node.getParam(topics_parameter_name, topics) &&
-      topics.getType() == XmlRpc::XmlRpcValue::TypeArray)
-    {
-      for (size_t i = 0; i < static_cast<size_t>(topics.size()); ++i) {
-        std::string topic_name = static_cast<std::string>(topics[i]["topic"]);
-        std::string type_name = static_cast<std::string>(topics[i]["type"]);
-        size_t queue_size = static_cast<int>(topics[i]["queue_size"]);
-        if (!queue_size) {
-          queue_size = 100;
-        }
-        printf(
-          "Trying to create bridge for topic '%s' "
-          "with ROS 2 type '%s'\n",
-          topic_name.c_str(), type_name.c_str());
-
-        try {
-
-          // Define default qos settings for parameter bridged topics
-          auto qos_settings = rclcpp::QoS(rclcpp::KeepLast(queue_size));
-
-          // Update the qos settings if the user has specified them
-          if (topics[i].hasMember("qos")) {
-            printf("Setting up QoS for '%s': ", topic_name.c_str());
-            qos_settings = ros1_bridge::qos_from_params(topics[i]["qos"]);
-            printf("\n");
-          }
-
-          // Check the bridge direction
-          if (topics[i].hasMember("direction") 
-            && topics[i]["direction"].getType() == XmlRpc::XmlRpcValue::TypeString
-            && static_cast<std::string>(topics[i]["direction"]) == "1to2") { // ROS1 to ROS2
-
-            printf("Parameter bridging topic in direction: 1to2 '%s': ", topic_name.c_str());
-
-            ros1_bridge::BridgeHandles handles;
-
-            handles.bridge1to2 = ros1_bridge::create_bridge_from_1_to_2(
-              ros1_node, ros2_node, "", topic_name, queue_size, type_name, topic_name, qos_settings);
-
-            all_parameter_based_handles.push_back(handles);
-
-          } else if (topics[i].hasMember("direction") 
-            && topics[i]["direction"].getType() == XmlRpc::XmlRpcValue::TypeString
-            && static_cast<std::string>(topics[i]["direction"]) == "2to1") { // ROS2 to ROS1
-
-            printf("Parameter bridging topic in direction: 2to1 '%s': ", topic_name.c_str());
-
-            ros1_bridge::BridgeHandles handles;
-
-            handles.bridge2to1 = ros1_bridge::create_bridge_from_2_to_1(
-              ros2_node, ros1_node, type_name, topic_name, qos_settings, "", topic_name, queue_size);
-
-            all_parameter_based_handles.push_back(handles);
-
-
-          } else { // bi-directional
-
-            printf("Parameter bridging topic in direction: both '%s': ", topic_name.c_str());
-
-            ros1_bridge::BridgeHandles handles = ros1_bridge::create_bidirectional_bridge(
-              ros1_node, ros2_node, "", type_name, topic_name, queue_size, qos_settings);
-            all_parameter_based_handles.push_back(handles);
-          }
-        } catch (std::runtime_error & e) {
-          fprintf(
-            stderr,
-            "failed to create bridge for topic '%s' "
-            "with ROS 2 type '%s': %s\n",
-            topic_name.c_str(), type_name.c_str(), e.what());
-        }
-      }
-    } else {
-      fprintf(
-        stderr,
-        "The parameter '%s' either doesn't exist or isn't an array\n", topics_parameter_name);
-    }
-
-    // ROS 1 Services in ROS 2
-    XmlRpc::XmlRpcValue services_1_to_2;
-    if (
-      ros1_node.getParam(services_1_to_2_parameter_name, services_1_to_2) &&
-      services_1_to_2.getType() == XmlRpc::XmlRpcValue::TypeArray)
-    {
-      for (size_t i = 0; i < static_cast<size_t>(services_1_to_2.size()); ++i) {
-        std::string service_name = static_cast<std::string>(services_1_to_2[i]["service"]);
-        std::string type_name = static_cast<std::string>(services_1_to_2[i]["type"]);
-        {
-          // for backward compatibility
-          std::string package_name = static_cast<std::string>(services_1_to_2[i]["package"]);
-          if (!package_name.empty()) {
-            fprintf(
-              stderr,
-              "The service '%s' uses the key 'package' which is deprecated for "
-              "services. Instead prepend the 'type' value with '<package>/'.\n",
-              service_name.c_str());
-            type_name = package_name + "/" + type_name;
-          }
-        }
-        printf(
-          "Trying to create bridge for ROS 2 service '%s' with type '%s'\n",
-          service_name.c_str(), type_name.c_str());
-
-        const size_t index = type_name.find("/");
-        if (index == std::string::npos) {
-          fprintf(
-            stderr,
-            "the service '%s' has a type '%s' without a slash.\n",
-            service_name.c_str(), type_name.c_str());
-          continue;
-        }
-        auto factory = ros1_bridge::get_service_factory(
-          "ros2", type_name.substr(0, index), type_name.substr(index + 1));
-        if (factory) {
-          try {
-            service_bridges_1_to_2[service_name] = factory->service_bridge_1_to_2(
-                ros1_node, ros2_node, service_name);
-            printf("Created 1 to 2 bridge for service %s\n", service_name.c_str());
-          } catch (std::runtime_error & e) {
-            fprintf(
-              stderr,
-              "failed to create bridge ROS 1 service '%s' with type '%s': %s\n",
-              service_name.c_str(), type_name.c_str(), e.what());
-          }
-        } else {
-          fprintf(
-            stderr,
-            "failed to create bridge ROS 1 service '%s' no conversion for type '%s'\n",
-            service_name.c_str(), type_name.c_str());
-        }
-      }
-
-    } else {
-      fprintf(
-        stderr,
-        "The parameter '%s' either doesn't exist or isn't an array\n",
-        services_1_to_2_parameter_name);
-    }
-
-
-    // ROS 2 Services in ROS 1
-    XmlRpc::XmlRpcValue services_2_to_1;
-    if (
-      ros1_node.getParam(services_2_to_1_parameter_name, services_2_to_1) &&
-      services_2_to_1.getType() == XmlRpc::XmlRpcValue::TypeArray) 
-    {
-      for (size_t i = 0; i < static_cast<size_t>(services_2_to_1.size()); ++i) {
-        std::string service_name = static_cast<std::string>(services_2_to_1[i]["service"]);
-        std::string type_name = static_cast<std::string>(services_2_to_1[i]["type"]);
-        {
-          // for backward compatibility
-          std::string package_name = static_cast<std::string>(services_2_to_1[i]["package"]);
-          if (!package_name.empty()) {
-            fprintf(
-              stderr,
-              "The service '%s' uses the key 'package' which is deprecated for "
-              "services. Instead prepend the 'type' value with '<package>/'.\n",
-              service_name.c_str());
-            type_name = package_name + "/" + type_name;
-          }
-        }
-        printf(
-          "Trying to create bridge for ROS 1 service '%s' with type '%s'\n",
-          service_name.c_str(), type_name.c_str());
-
-        const size_t index = type_name.find("/");
-        if (index == std::string::npos) {
-          fprintf(
-            stderr,
-            "the service '%s' has a type '%s' without a slash.\n",
-            service_name.c_str(), type_name.c_str());
-          continue;
-        }
-
-        auto factory = ros1_bridge::get_service_factory(
-          "ros1", type_name.substr(0, index), type_name.substr(index + 1));
-        if (factory) {
-          try {
-            service_bridges_2_to_1[service_name] = 
-              factory->service_bridge_2_to_1(ros1_node, ros2_node, service_name);
-            printf("Created 2 to 1 bridge for service %s\n", service_name.c_str());
-          } catch (std::runtime_error & e) {
-            fprintf(
-              stderr,
-              "failed to create bridge ROS 2 service '%s' with type '%s': %s\n",
-              service_name.c_str(), type_name.c_str(), e.what());
-          }
-        } else {
-          fprintf(
-            stderr,
-            "failed to create bridge ROS 2 service '%s' no conversion for type '%s'\n",
-            service_name.c_str(), type_name.c_str());
-        }
-      }
-
-    } else {
-      fprintf(
-        stderr,
-        "The parameter '%s' either doesn't exist or isn't an array\n",
-        services_2_to_1_parameter_name);
-    }
-
-
-    // Add the parameter topics to the reserved set
-    for (const auto& handle :  all_parameter_based_handles) {
-      // All parameter topics bridges are bi-directional so just get the ros1 topic name
-      // and add it to the reserved set
-      if (handle.bridge1to2.ros2_publisher) { // If the ros2_publisher is set then we can get the topic from the 1to2 handle
-        parameter_reserved_connections.insert(handle.bridge1to2.ros1_subscriber.getTopic());
-      } else { // Otherwise we can get the topic from the 2to1 handle
-        parameter_reserved_connections.insert(handle.bridge2to1.ros1_publisher.getTopic());
-      }
-
-    }
-
-    // Add parameter services from 1 to 2 to the reserved set 
-    for (const auto& service : service_bridges_1_to_2) {
-      parameter_reserved_connections.insert(service.first);
-    }
-
-    // Add parameter services from 2 to 1 to the reserved set 
-    for (const auto& service : service_bridges_2_to_1) {
-      parameter_reserved_connections.insert(service.first);
-    }
-
-  } // parameter-bridge scope
-
-  /////////////////////////////////
-  //
-  // SETUP DYNAMIC TOPIC BRIDGING
-  //
-  /////////////////////////////////
 
   // setup polling of ROS 1 master
   auto ros1_poll = [
@@ -781,9 +490,7 @@ int main(int argc, char * argv[])
     &ros1_services, &ros2_services,
     &service_bridges_1_to_2, &service_bridges_2_to_1,
     &output_topic_introspection,
-    &bridge_all_1to2_topics, &bridge_all_2to1_topics,
-    &parameter_reserved_connections,
-    multi_threads
+    &bridge_all_1to2_topics, &bridge_all_2to1_topics
     ](const ros::TimerEvent &) -> void
     {
       // collect all topics names which have at least one publisher or subscriber beside this bridge
@@ -801,10 +508,6 @@ int main(int argc, char * argv[])
         for (int j = 0; j < payload[0].size(); ++j) {
           std::string topic_name = payload[0][j][0];
           for (int k = 0; k < payload[0][j][1].size(); ++k) {
-            // ignore publishers for reserved topics
-            if (parameter_reserved_connections.find(topic_name) != parameter_reserved_connections.end()) {
-              continue;
-            }
             std::string node_name = payload[0][j][1][k];
             // ignore publishers from the bridge itself
             if (node_name == ros::this_node::getName()) {
@@ -820,12 +523,6 @@ int main(int argc, char * argv[])
         for (int j = 0; j < payload[1].size(); ++j) {
           std::string topic_name = payload[1][j][0];
           for (int k = 0; k < payload[1][j][1].size(); ++k) {
-
-            // ignore subscribers for reserved topics
-            if (parameter_reserved_connections.find(topic_name) != parameter_reserved_connections.end()) {
-              continue;
-            }
-
             std::string node_name = payload[1][j][1][k];
             // ignore subscribers from the bridge itself
             if (node_name == ros::this_node::getName()) {
@@ -843,12 +540,6 @@ int main(int argc, char * argv[])
         for (int j = 0; j < payload[2].size(); ++j) {
           if (payload[2][j][0].getType() == XmlRpc::XmlRpcValue::TypeString) {
             std::string name = payload[2][j][0];
-
-            // ignore reserved services
-            if (parameter_reserved_connections.find(name) != parameter_reserved_connections.end()) {
-              continue;
-            }
-
             get_ros1_service_info(name, active_ros1_services);
           }
         }
@@ -917,9 +608,7 @@ int main(int argc, char * argv[])
         ros1_services, ros2_services,
         bridges_1to2, bridges_2to1,
         service_bridges_1_to_2, service_bridges_2_to_1,
-        parameter_reserved_connections,
-        bridge_all_1to2_topics, bridge_all_2to1_topics,
-        multi_threads);
+        bridge_all_1to2_topics, bridge_all_2to1_topics);
     };
 
   auto ros1_poll_timer = ros1_node.createTimer(ros::Duration(1.0), ros1_poll);
@@ -938,16 +627,13 @@ int main(int argc, char * argv[])
     &service_bridges_1_to_2, &service_bridges_2_to_1,
     &output_topic_introspection,
     &bridge_all_1to2_topics, &bridge_all_2to1_topics,
-    &already_ignored_topics, &already_ignored_services,
-    &parameter_reserved_connections,
-    multi_threads
+    &already_ignored_topics, &already_ignored_services
     ]() -> void
     {
       auto ros2_topics = ros2_node->get_topic_names_and_types();
 
       std::set<std::string> ignored_topics;
       ignored_topics.insert("parameter_events");
-      ignored_topics.insert(parameter_reserved_connections.begin(), parameter_reserved_connections.end());
 
       std::map<std::string, std::string> current_ros2_publishers;
       std::map<std::string, std::string> current_ros2_subscribers;
@@ -1009,31 +695,11 @@ int main(int argc, char * argv[])
         }
       }
 
-      // collect available services (not clients)
-      std::set<std::string> service_names;
-      std::vector<std::pair<std::string, std::string>> node_names_and_namespaces =
-        ros2_node->get_node_graph_interface()->get_node_names_and_namespaces();
-      for (auto & pair : node_names_and_namespaces) {
-        if (pair.first == ros2_node->get_name() && pair.second == ros2_node->get_namespace()) {
-          continue;
-        }
-        std::map<std::string, std::vector<std::string>> services_and_types =
-          ros2_node->get_service_names_and_types_by_node(pair.first, pair.second);
-        for (auto & it : services_and_types) {
-          service_names.insert(it.first);
-        }
-      }
-
       auto ros2_services_and_types = ros2_node->get_service_names_and_types();
       std::map<std::string, std::map<std::string, std::string>> active_ros2_services;
       for (const auto & service_and_types : ros2_services_and_types) {
         auto & service_name = service_and_types.first;
         auto & service_type = service_and_types.second[0];  // explicitly take the first
-
-        // ignore reserved services
-        if (parameter_reserved_connections.find(service_name) != parameter_reserved_connections.end()) {
-          continue;
-        }
 
         // explicitly avoid services with more than one type
         if (service_and_types.second.size() > 1) {
@@ -1059,14 +725,12 @@ int main(int argc, char * argv[])
           fprintf(stderr, "invalid service type '%s', skipping...\n", service_type.c_str());
           continue;
         }
+        auto service_type_package_name = service_type.substr(0, separator_position);
+        auto service_type_srv_name = service_type.substr(separator_position + 1);
 
-        // only bridge if there is a service, not for a client
-        if (service_names.find(service_name) != service_names.end()) {
-          auto service_type_package_name = service_type.substr(0, separator_position);
-          auto service_type_srv_name = service_type.substr(separator_position + 1);
-          active_ros2_services[service_name]["package"] = service_type_package_name;
-          active_ros2_services[service_name]["name"] = service_type_srv_name;
-        }
+        // TODO(wjwwood): fix bug where just a ros2 client will cause a ros1 service to be made
+        active_ros2_services[service_name]["package"] = service_type_package_name;
+        active_ros2_services[service_name]["name"] = service_type_srv_name;
       }
 
       {
@@ -1091,51 +755,22 @@ int main(int argc, char * argv[])
         ros1_services, ros2_services,
         bridges_1to2, bridges_2to1,
         service_bridges_1_to_2, service_bridges_2_to_1,
-        parameter_reserved_connections,
-        bridge_all_1to2_topics, bridge_all_2to1_topics,
-        multi_threads);
-    };
-
-  auto check_ros1_flag = [&ros1_node] {
-      if (!ros1_node.ok()) {
-        rclcpp::shutdown();
-      }
+        bridge_all_1to2_topics, bridge_all_2to1_topics);
     };
 
   auto ros2_poll_timer = ros2_node->create_wall_timer(
-    std::chrono::seconds(1), [&ros2_poll, &check_ros1_flag] {
-      ros2_poll();
-      check_ros1_flag();
-    });
+    std::chrono::seconds(1), ros2_poll);
 
-  //////////////////////////////
-  //
-  // Setup Spinners
-  //
-  //////////////////////////////
 
   // ROS 1 asynchronous spinner
-  std::unique_ptr<ros::AsyncSpinner> async_spinner = nullptr;
-  if (!multi_threads) {
-    RCLCPP_INFO_STREAM(ros2_node->get_logger(), "Using single-threaded ROS1 spinner");
-    async_spinner = std::make_unique<ros::AsyncSpinner>(1);
-  } else {
-    RCLCPP_INFO_STREAM(ros2_node->get_logger(), "Using multi-threaded ROS1 spinner");
-    async_spinner = std::make_unique<ros::AsyncSpinner>(0, ros1_callback_queue.get());
-  }
-  async_spinner->start();
+  ros::AsyncSpinner async_spinner(1);
+  async_spinner.start();
 
   // ROS 2 spinning loop
-  std::unique_ptr<rclcpp::Executor> executor = nullptr;
-  if (!multi_threads) {
-    RCLCPP_INFO_STREAM(ros2_node->get_logger(), "Using single-threaded ROS2 executor");
-    executor = std::make_unique<rclcpp::executors::SingleThreadedExecutor>();
-  } else {
-    RCLCPP_INFO_STREAM(ros2_node->get_logger(), "Using multi-threaded ROS2 executor");
-    executor = std::make_unique<rclcpp::executors::MultiThreadedExecutor>();
+  rclcpp::executors::SingleThreadedExecutor executor;
+  while (ros1_node.ok() && rclcpp::ok()) {
+    executor.spin_node_once(ros2_node);
   }
-  executor->add_node(ros2_node);
-  executor->spin();
 
   return 0;
 }

@@ -83,17 +83,6 @@ create_bridge_from_1_to_2(
   const std::string & ros2_topic_name,
   size_t publisher_queue_size);
 
-Bridge1to2Handles
-create_bridge_from_1_to_2(
-  ros::NodeHandle ros1_node,
-  rclcpp::Node::SharedPtr ros2_node,
-  const std::string & ros1_type_name,
-  const std::string & ros1_topic_name,
-  size_t subscriber_queue_size,
-  const std::string & ros2_type_name,
-  const std::string & ros2_topic_name,
-  const rclcpp::QoS & publisher_qos);
-
 Bridge2to1Handles
 create_bridge_from_2_to_1(
   rclcpp::Node::SharedPtr ros2_node,
@@ -104,21 +93,7 @@ create_bridge_from_2_to_1(
   const std::string & ros1_type_name,
   const std::string & ros1_topic_name,
   size_t publisher_queue_size,
-  rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr,
-  bool custom_callback_group = false);
-
-Bridge2to1Handles
-create_bridge_from_2_to_1(
-  rclcpp::Node::SharedPtr ros2_node,
-  ros::NodeHandle ros1_node,
-  const std::string & ros2_type_name,
-  const std::string & ros2_topic_name,
-  const rclcpp::QoS & subscriber_qos,
-  const std::string & ros1_type_name,
-  const std::string & ros1_topic_name,
-  size_t publisher_queue_size,
-  rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr,
-  bool custom_callback_group = false);
+  rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr);
 
 BridgeHandles
 create_bidirectional_bridge(
@@ -127,18 +102,7 @@ create_bidirectional_bridge(
   const std::string & ros1_type_name,
   const std::string & ros2_type_name,
   const std::string & topic_name,
-  size_t queue_size = 10,
-  bool custom_callback_group = false);
-
-BridgeHandles
-create_bidirectional_bridge(
-  ros::NodeHandle ros1_node,
-  rclcpp::Node::SharedPtr ros2_node,
-  const std::string & ros1_type_name,
-  const std::string & ros2_type_name,
-  const std::string & topic_name,
-  size_t queue_size,
-  const rclcpp::QoS & publisher_qos);
+  size_t queue_size = 10);
 
 }  // namespace ros1_bridge
 

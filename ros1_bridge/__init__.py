@@ -25,7 +25,6 @@ import genmsg.msg_loader
 
 import rosidl_adapter.parser
 from rosidl_cmake import expand_template
-import rosidl_parser.parser
 
 import yaml
 
@@ -139,19 +138,15 @@ def generate_cpp(output_path, template_dir):
                     'ros2_package_name': ros2_package_name,
                     'interface_type': interface_type,
                     'interface': interface,
-                    'mapped_msgs': [],
-                    'mapped_services': [],
-                }
-                if interface_type == 'msg':
-                    data_idl_cpp['mapped_msgs'] += [
+                    'mapped_msgs': [
                         m for m in data['mappings']
                         if m.ros2_msg.package_name == ros2_package_name and
-                        m.ros2_msg.message_name == interface.message_name]
-                if interface_type == 'srv':
-                    data_idl_cpp['mapped_services'] += [
+                        m.ros2_msg.message_name == interface.message_name],
+                    'mapped_services': [
                         s for s in data['services']
                         if s['ros2_package'] == ros2_package_name and
-                        s['ros2_name'] == interface.message_name]
+                        s['ros2_name'] == interface.message_name],
+                }
                 template_file = os.path.join(template_dir, 'interface_factories.cpp.em')
                 output_file = os.path.join(
                     output_path, '%s__%s__%s__factories.cpp' %
@@ -288,7 +283,7 @@ def get_ros2_messages():
                 if all(n not in data for n in ('ros1_service_name', 'ros2_service_name')):
                     try:
                         rules.append(MessageMappingRule(data, package_name))
-                    except Exception as e:  # noqa: B902
+                    except Exception as e:
                         print('%s' % str(e), file=sys.stderr)
     return pkgs, msgs, rules
 
@@ -341,7 +336,7 @@ def get_ros2_services():
                 if all(n not in data for n in ('ros1_message_name', 'ros2_message_name')):
                     try:
                         rules.append(ServiceMappingRule(data, package_name))
-                    except Exception as e:  # noqa: B902
+                    except Exception as e:
                         print('%s' % str(e), file=sys.stderr)
     return pkgs, srvs, rules
 
@@ -567,20 +562,17 @@ def determine_common_services(
     for rule in mapping_rules:
         for ros1_srv in ros1_srvs:
             for ros2_srv in ros2_srvs:
-                pair = (ros1_srv, ros2_srv)
-                if pair in pairs:
-                    continue
                 if rule.ros1_package_name == ros1_srv.package_name and \
                    rule.ros2_package_name == ros2_srv.package_name:
                     if rule.ros1_service_name is None and rule.ros2_service_name is None:
                         if ros1_srv.message_name == ros2_srv.message_name:
-                            pairs.append(pair)
+                            pairs.append((ros1_srv, ros2_srv))
                     else:
                         if (
                             rule.ros1_service_name == ros1_srv.message_name and
                             rule.ros2_service_name == ros2_srv.message_name
                         ):
-                            pairs.append(pair)
+                            pairs.append((ros1_srv, ros2_srv))
 
     for pair in pairs:
         ros1_spec = load_ros1_service(pair[0])
@@ -610,7 +602,7 @@ def determine_common_services(
                 if ros1_type != ros2_type or ros1_name != ros2_name:
                     # if the message types have a custom mapping their names
                     # might not be equal, therefore check the message pairs
-                    if (ros1_type.rstrip("[]"), ros2_type.rstrip("[]")) not in message_string_pairs:
+                    if (ros1_type, ros2_type) not in message_string_pairs:
                         match = False
                         break
                 output[direction].append({
@@ -685,17 +677,11 @@ def get_ros1_selected_fields(ros1_field_selection, parent_ros1_spec, msg_idx):
 def get_ros2_selected_fields(ros2_field_selection, parent_ros2_spec, msg_idx):
     selected_fields = []
     fields = ros2_field_selection.split('.')
-    current_field = [
-        member for member in parent_ros2_spec.structure.members
-        if member.name == fields[0]
-    ][0]
+    current_field = [f for f in parent_ros2_spec.fields if f.name == fields[0]][0]
     selected_fields.append(current_field)
     for field in fields[1:]:
         parent_ros2_spec = load_ros2_message(msg_idx.ros2_get_from_field(current_field))
-        current_field = [
-            member for member in parent_ros2_spec.structure.members
-            if member.name == field
-        ][0]
+        current_field = [f for f in parent_ros2_spec.fields if f.name == field][0]
         selected_fields.append(current_field)
     return tuple(selected_fields)
 
@@ -759,11 +745,12 @@ def determine_field_mapping(ros1_msg, ros2_msg, mapping_rules, msg_idx):
     ros1_field_missing_in_ros2 = False
 
     for ros1_field in ros1_spec.parsed_fields():
-        for ros2_member in ros2_spec.structure.members:
-            if ros1_field.name.lower() == ros2_member.name:
+        for ros2_field in ros2_spec.fields:
+            if ros1_field.name.lower() == ros2_field.name:
                 # get package name and message name from ROS 1 field type
-                update_ros1_field_information(ros1_field, ros1_msg.package_name)
-                mapping.add_field_pair(ros1_field, ros2_member)
+                if ros2_field.type.pkg_name:
+                    update_ros1_field_information(ros1_field, ros1_msg.package_name)
+                mapping.add_field_pair(ros1_field, ros2_field)
                 break
         else:
             # this allows fields to exist in ROS 1 but not in ROS 2
@@ -773,9 +760,9 @@ def determine_field_mapping(ros1_msg, ros2_msg, mapping_rules, msg_idx):
         # if some fields exist in ROS 1 but not in ROS 2
         # check that no fields exist in ROS 2 but not in ROS 1
         # since then it might be the case that those have been renamed and should be mapped
-        for ros2_member in ros2_spec.structure.members:
+        for ros2_field in ros2_spec.fields:
             for ros1_field in ros1_spec.parsed_fields():
-                if ros1_field.name.lower() == ros2_member.name:
+                if ros1_field.name.lower() == ros2_field.name:
                     break
             else:
                 # if fields from both sides are not mappable the whole message is not mappable
@@ -807,45 +794,14 @@ def load_ros1_service(ros1_srv):
 
 
 def load_ros2_message(ros2_msg):
-    message_basepath = os.path.join(ros2_msg.prefix_path, 'share')
-    message_relative_path = \
-        os.path.join(ros2_msg.package_name, 'msg', ros2_msg.message_name)
-    message_path = os.path.join(message_basepath, message_relative_path)
-    # Check to see if the message is defined as a .msg file or an .idl file,
-    # but preferring '.idl' if both exist.
-    if os.path.exists(message_path + '.idl'):
-        message_path += '.idl'
-        message_relative_path += '.idl'
-    elif os.path.exists(message_path + '.msg'):
-        message_path += '.msg'
-        message_relative_path += '.msg'
-    else:
-        raise RuntimeError(
-            f"message '{ros2_msg.package_name}/msg/{ros2_msg.message_name}' "
-            f"was not found in prefix '{ros2_msg.prefix_path}' with either "
-            f"file extension '.msg' or '.idl'")
-    # We don't support .msg files, but that shouldn't be a problem since an .idl
-    # version should have been created when the package was built by rosidl_adapter.
-    if message_path.endswith('.msg'):
-        raise RuntimeError(
-            "ros1_bridge cannot process ROS 2 message definitions that lack a '.idl' version, "
-            "which normally does not occur as rosidl_adapter should create a '.idl' version "
-            "when building the message package which contains the original '.msg' file."
-        )
-    if not message_path.endswith('.idl'):
-        raise RuntimeError(
-            f"message_path '{message_path}' unexpectedly does not end with '.idl'"
-        )
-    idl_locator = \
-        rosidl_parser.definition.IdlLocator(message_basepath, message_relative_path)
-    spec = rosidl_parser.parser.parse_idl_file(idl_locator)
-    messages = spec.content.get_elements_of_type(rosidl_parser.definition.Message)
-    if len(messages) != 1:
-        raise RuntimeError(
-            'unexpectedly found multiple message definitions when processing '
-            f"message '{ros2_msg.package_name}/msg/{ros2_msg.message_name}'"
-        )
-    return messages[0]
+    message_path = os.path.join(
+        ros2_msg.prefix_path, 'share', ros2_msg.package_name, 'msg',
+        ros2_msg.message_name + '.msg')
+    try:
+        spec = rosidl_adapter.parser.parse_message_file(ros2_msg.package_name, message_path)
+    except rosidl_adapter.parser.InvalidSpecification:
+        return None
+    return spec
 
 
 def load_ros2_service(ros2_srv):
@@ -884,34 +840,26 @@ class Mapping:
         self.fields_2_to_1 = OrderedDict()
         self.depends_on_ros2_messages = set()
 
-    def add_field_pair(self, ros1_fields, ros2_members):
+    def add_field_pair(self, ros1_fields, ros2_fields):
         """
         Add a new mapping for a pair of ROS 1 and ROS 2 messages.
 
         :type ros1_fields: either a genmsg.msgs.Field object with additional attributes `pkg_name`
         and `msg_name` as defined by `update_ros1_field_information`, or a tuple of objects of
         that type
-        :type ros2_members: a single, or list of, rosidl_parser.definition.Member object(s)
+        :type ros2_field: either a rosidl_adapter.parser.Field object, or a tuple objects of
+        that type
         """
         if not isinstance(ros1_fields, tuple):
             ros1_fields = (ros1_fields,)
-        if not isinstance(ros2_members, tuple):
-            ros2_members = (ros2_members, )
-        self.fields_1_to_2[ros1_fields] = ros2_members
-        self.fields_2_to_1[ros2_members] = ros1_fields
-        for ros2_member in ros2_members:
-            # If the member is not a namespaced type, skip.
-            if not isinstance(ros2_member.type, rosidl_parser.definition.NamespacedType):
-                continue
-            # If it is, then the type will have a namespaced name, e.g. (std_msgs, msg, String)
-            # If it is not of the standard ('<package name>', 'msg', '<type>'), skip it
-            if len(ros2_member.type.namespaces) != 2 or ros2_member.type.namespaces[1] != 'msg':
-                continue
-            # Extract the package name and message name
-            pkg_name = ros2_member.type.namespaces[0]
-            msg_name = ros2_member.type.name
-            if pkg_name != 'builtin_interfaces':
-                self.depends_on_ros2_messages.add(Message(pkg_name, msg_name))
+        if not isinstance(ros2_fields, tuple):
+            ros2_fields = (ros2_fields, )
+        self.fields_1_to_2[ros1_fields] = ros2_fields
+        self.fields_2_to_1[ros2_fields] = ros1_fields
+        for ros2_field in ros2_fields:
+            if ros2_field.type.pkg_name and ros2_field.type.pkg_name != 'builtin_interfaces':
+                self.depends_on_ros2_messages.add(
+                    Message(ros2_field.type.pkg_name, ros2_field.type.type))
 
 
 def camel_case_to_lower_case_underscore(value):
