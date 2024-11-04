@@ -498,6 +498,9 @@ if isinstance(ros2_fields[-1].type, NamespacedType):
   {
     ros1_bridge::internal_stream_translate_helper(stream, *ros2_it);
   }
+@[            elif ros2_fields[-1].type.value_type.typename == 'boolean']@
+  // write primitive type, specialized
+  streamPrimitiveVectorBool(stream, ros2_msg.@(ros2_field_selection));
 @[            else]@
   // write primitive type
   streamPrimitiveVector(stream, ros2_msg.@(ros2_field_selection));
