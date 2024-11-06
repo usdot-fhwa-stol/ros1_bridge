@@ -10,13 +10,21 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra)
 endif()
 
+
+set(ACTION_GOAL_RESPONSE_CB_CONST_list "humble;iron")
+if("$ENV{ROS_DISTRO}" IN_LIST ACTION_GOAL_RESPONSE_CB_CONST_list)
+    #set(ACTION_GOAL_RESPONSE_CB_CONST ON)
+    add_definitions("-DACTION_GOAL_RESPONSE_CB_CONST")
+    message("Using ACTION_GOAL_RESPONSE_CB_CONST")
+endif()
+
 find_package(rmw REQUIRED)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rmw_implementation_cmake REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(xmlrpcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 
 # find ROS 1 packages
 set(cmake_extras_files cmake/find_ros1_package.cmake cmake/find_ros1_interface_packages.cmake)
@@ -32,7 +40,10 @@ endif()
 
 find_ros1_package(roscpp)
 if(NOT ros1_roscpp_FOUND)
-  message(WARNING "Failed to find ROS 1 roscpp, skipping...")
+  if(NOT ROS1_PACKAGES_UNAVAILABLE)
+    # Only warn if ROS1 packages were expected to be available
+    message(WARNING "Failed to find ROS 1 roscpp, skipping...")
+  endif()
   # call ament_package() to avoid ament_tools treating this as a plain CMake pkg
   ament_package(
     CONFIG_EXTRAS ${cmake_extras_files}
@@ -41,6 +52,11 @@ if(NOT ros1_roscpp_FOUND)
 endif()
 
 find_ros1_package(std_msgs REQUIRED)
+find_ros1_package(actionlib REQUIRED)
+
+# Dependency that we should only look for if ROS 1 is installed (it's not present on a ROS 2
+# system; see https://github.com/ros2/ros1_bridge/pull/331#issuecomment-1188111510)
+find_package(xmlrpcpp REQUIRED)
 
 # find ROS 1 packages with messages / services
 include(cmake/find_ros1_interface_packages.cmake)
@@ -74,6 +90,42 @@ if(BUILD_TESTING)
     endif()
     set(TEST_ROS1_BRIDGE TRUE)
   endif()
+
+  find_package(ament_cmake_gtest REQUIRED)
+  find_package(geometry_msgs REQUIRED)
+  find_package(std_msgs REQUIRED)
+  find_package(sensor_msgs REQUIRED)
+  find_ros1_package(geometry_msgs)
+  find_ros1_package(std_msgs)
+  find_ros1_package(sensor_msgs)
+  if(ros1_geometry_msgs_FOUND AND ros1_sensor_msgs_FOUND AND ros1_std_msgs_FOUND)
+    ament_add_gtest(test_convert_generic test/test_convert_generic.cpp)
+    ament_target_dependencies(test_convert_generic
+      "geometry_msgs"
+      "rclcpp"
+      "ros1_roscpp"
+      "ros1_sensor_msgs"
+      "ros1_std_msgs"
+      "ros1_geometry_msgs"
+      "sensor_msgs"
+      "std_msgs"
+    )
+    target_link_libraries(test_convert_generic ${PROJECT_NAME})
+
+    ament_add_gtest(test_ros2_to_ros1_serialization test/test_ros2_to_ros1_serialization.cpp)
+    ament_target_dependencies(test_ros2_to_ros1_serialization
+      "geometry_msgs"
+      "rclcpp"
+      "ros1_roscpp"
+      "ros1_sensor_msgs"
+      "ros1_std_msgs"
+      "ros1_geometry_msgs"
+      "sensor_msgs"
+      "std_msgs"
+    )
+    target_link_libraries(test_ros2_to_ros1_serialization ${PROJECT_NAME})
+  endif()
+
 endif()
 
 ament_export_include_directories(include)
@@ -104,7 +156,7 @@ foreach(package_name ${ros2_interface_packages})
       file(TO_CMAKE_PATH "${interface_file}" interface_name)
       get_filename_component(interface_basename "${interface_name}" NAME_WE)
       # skipping actions and request and response messages of services
-      if(NOT "${interface_name}" MATCHES "^(msg|srv)/" OR "${interface_basename}" MATCHES "_(Request|Response)$")
+      if(NOT "${interface_name}" MATCHES "^(msg|srv|action)/" OR "${interface_basename}" MATCHES "_(Request|Response)$")
         continue()
       endif()
       string(REPLACE "/" "__" interface_name "${interface_name}")
@@ -184,6 +236,7 @@ ament_target_dependencies(${PROJECT_NAME}
   ${prefixed_ros1_message_packages}
   ${ros2_interface_packages}
   "rclcpp"
+  "rclcpp_action"
   "ros1_roscpp"
   "ros1_std_msgs")
 
@@ -197,6 +250,13 @@ custom_executable(static_bridge
   ROS1_DEPENDENCIES
   TARGET_DEPENDENCIES ${ros2_interface_packages})
 target_link_libraries(static_bridge
+  ${PROJECT_NAME})
+
+custom_executable(action_bridge
+  "src/action_bridge.cpp"
+  ROS1_DEPENDENCIES
+  TARGET_DEPENDENCIES ${ros2_interface_packages})
+target_link_libraries(action_bridge
   ${PROJECT_NAME})
 
 custom_executable(parameter_bridge
