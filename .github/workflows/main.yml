@@ -6,8 +6,10 @@ jobs:
   ros1_bridge:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3.1.0
-      - uses: ros-tooling/setup-ros@v0.6
+      - uses: actions/checkout@v4.2.2
+      - uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: "noetic rolling"
       - name: Build and test ros1-bridge
         uses: ros-tooling/action-ros-ci@v0.3
         with:
