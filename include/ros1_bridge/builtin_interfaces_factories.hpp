@@ -26,6 +26,9 @@
 #include <memory>
 #include <string>
 
+#include <memory>
+#include <string>
+
 // include ROS 2 messages
 #include <builtin_interfaces/msg/duration.hpp>
 #include <builtin_interfaces/msg/time.hpp>

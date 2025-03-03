@@ -800,7 +800,7 @@ int main(int argc, char * argv[])
     ros1_callback_queue = std::make_unique<ros::CallbackQueue>();
     ros1_node.setCallbackQueue(ros1_callback_queue.get());
   }
-  
+
   ////////////
   // TOPIC CACHE
   ////////////
@@ -876,7 +876,7 @@ int main(int argc, char * argv[])
           }
 
           // Check the bridge direction
-          if (topics[i].hasMember("direction") 
+          if (topics[i].hasMember("direction")
             && topics[i]["direction"].getType() == XmlRpc::XmlRpcValue::TypeString
             && static_cast<std::string>(topics[i]["direction"]) == "1to2") { // ROS1 to ROS2
 
@@ -889,7 +889,7 @@ int main(int argc, char * argv[])
 
             all_parameter_based_handles.push_back(handles);
 
-          } else if (topics[i].hasMember("direction") 
+          } else if (topics[i].hasMember("direction")
             && topics[i]["direction"].getType() == XmlRpc::XmlRpcValue::TypeString
             && static_cast<std::string>(topics[i]["direction"]) == "2to1") { // ROS2 to ROS1
 
@@ -991,7 +991,7 @@ int main(int argc, char * argv[])
     XmlRpc::XmlRpcValue services_2_to_1;
     if (
       ros1_node.getParam(services_2_to_1_parameter_name, services_2_to_1) &&
-      services_2_to_1.getType() == XmlRpc::XmlRpcValue::TypeArray) 
+      services_2_to_1.getType() == XmlRpc::XmlRpcValue::TypeArray)
     {
       for (size_t i = 0; i < static_cast<size_t>(services_2_to_1.size()); ++i) {
         std::string service_name = static_cast<std::string>(services_2_to_1[i]["service"]);
@@ -1025,7 +1025,7 @@ int main(int argc, char * argv[])
           "ros1", type_name.substr(0, index), type_name.substr(index + 1));
         if (factory) {
           try {
-            service_bridges_2_to_1[service_name] = 
+            service_bridges_2_to_1[service_name] =
               factory->service_bridge_2_to_1(ros1_node, ros2_node, service_name);
             printf("Created 2 to 1 bridge for service %s\n", service_name.c_str());
           } catch (std::runtime_error & e) {
@@ -1062,12 +1062,12 @@ int main(int argc, char * argv[])
 
     }
 
-    // Add parameter services from 1 to 2 to the reserved set 
+    // Add parameter services from 1 to 2 to the reserved set
     for (const auto& service : service_bridges_1_to_2) {
       parameter_reserved_connections.insert(service.first);
     }
 
-    // Add parameter services from 2 to 1 to the reserved set 
+    // Add parameter services from 2 to 1 to the reserved set
     for (const auto& service : service_bridges_2_to_1) {
       parameter_reserved_connections.insert(service.first);
     }
